@@ -12,7 +12,7 @@ from .audio_in import (MicError, MicRecorder, level_from_rms, list_devices,
                        refresh_portaudio)
 from .generator import chord_labels, generate
 from .models import Note
-from .patterns import BASS_STYLES, DRUM_STYLES
+from .patterns import BASS_STYLES, DRUM_STYLES, GENRES
 from .pitch import HOP
 from .playback import (AudioEngine, click_buffer, mix, preview_tone, render_tracks,
                        write_wav)
@@ -164,7 +164,10 @@ class Controller:
         try:
             hop_s = HOP / self.recorder.sr
             active_frames = [frame for frame in frames if frame.rms >= self.recorder.gate]
-            duration_seconds = max((frame.t + hop_s for frame in active_frames), default=0.0)
+            duration_seconds = min(
+                self.max_record_seconds,
+                max((frame.t + hop_s for frame in active_frames), default=0.0),
+            )
             duration_beats = duration_seconds * self._rec_bpm / 60.0
             bars = max(1, int((duration_beats + 4.0 - 1e-9) // 4.0))
             notes = frames_to_notes(frames, self._rec_bpm, bars, hop_s=hop_s,
@@ -226,8 +229,9 @@ class Controller:
 
     # --------------------------------------------------------- settings
     def set_genre(self, genre):
-        self.genre = genre
-        self._rebuild_async()
+        if genre in GENRES:
+            self.genre = genre
+            self._rebuild_async()
 
     def set_bass_style(self, style):
         if style in BASS_STYLES:

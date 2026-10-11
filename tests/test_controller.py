@@ -88,6 +88,22 @@ def test_capture_duration_comes_from_last_voiced_frame():
     assert c.song.duration_beats > 16.0
 
 
+def test_max_record_setting_builds_45_second_timeline():
+    from core.models import PitchFrame
+
+    c = make()
+    c.set_max_record_seconds(45)
+    c._rec_bpm = 100
+    step = 512 / c.recorder.sr
+    frame_count = round(45 / step)
+    frames = [PitchFrame(i * step, 60, 0.1, 1.0) for i in range(frame_count)]
+    c._finish_recording(frames)
+
+    assert c.song is not None
+    rendered_seconds = len(c.tracks["melody"]) / c.engine.sr
+    assert 44.9 <= rendered_seconds <= 45.0
+
+
 # ------------------------------------------------------------- melody editing
 def _wait_built(c, timeout=5.0):
     t0 = time.perf_counter()

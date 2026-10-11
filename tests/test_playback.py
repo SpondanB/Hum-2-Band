@@ -37,6 +37,15 @@ def test_genres_sound_different():
                               mix(render_tracks(song(genre="lo-fi")), "lo-fi"))
 
 
+def test_additional_genres_render_distinct_sound():
+    genres = ("rock", "funk", "hip-hop", "electronic")
+    rendered = [mix(render_tracks(generate(MELODY, 0, "major", 100, genre)), genre)
+                for genre in genres]
+
+    assert all(np.isfinite(audio).all() and np.abs(audio).max() > 0.1 for audio in rendered)
+    assert all(not np.array_equal(rendered[0], audio) for audio in rendered[1:])
+
+
 def test_rendered_loop_uses_exact_hum_duration():
     phrase = generate(MELODY, 0, "major", 120, "pop", bars=2, duration_beats=6.5)
     tracks = render_tracks(phrase)

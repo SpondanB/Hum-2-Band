@@ -45,6 +45,26 @@ VOICES = {
         "chords": dict(harmonics=[1, .15], decay=0.9, attack=0.04),
         "bass": dict(harmonics=[1, .25], decay=0.8),
     },
+    "rock": {
+        "melody": dict(harmonics=[1, .65, .45, .3, .2], decay=0.22),
+        "chords": dict(harmonics=[1, .65, .35, .2], decay=0.35, attack=0.008),
+        "bass": dict(harmonics=[1, .65, .3], decay=0.28),
+    },
+    "funk": {
+        "melody": dict(harmonics=[1, .35, .12], decay=0.45),
+        "chords": dict(harmonics=[1, .22], decay=1.0, attack=0.004),
+        "bass": dict(harmonics=[1, .35, .08], decay=1.4, attack=0.004),
+    },
+    "hip-hop": {
+        "melody": dict(harmonics=[1, .2, .08], decay=0.75),
+        "chords": dict(harmonics=[1, .2], decay=0.7, attack=0.025),
+        "bass": dict(harmonics=[1, .12], decay=0.65, attack=0.004),
+    },
+    "electronic": {
+        "melody": dict(harmonics=[1, .45, .2, .1], decay=0.55),
+        "chords": dict(harmonics=[1, .3, .08], decay=1.1, attack=0.012),
+        "bass": dict(harmonics=[1, .08], decay=0.4, attack=0.003),
+    },
 }
 
 
