@@ -13,10 +13,12 @@ from .audio_in import (MicError, MicRecorder, level_from_rms, list_devices,
 from .generator import chord_labels, generate
 from .models import Note
 from .pitch import HOP
-from .playback import AudioEngine, click_buffer, mix, render_tracks, write_wav
+from .playback import (AudioEngine, click_buffer, mix, preview_tone, render_tracks,
+                       write_wav)
 
 DEMO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "demo_melody.json")
 BUSY_STATES = ("counting", "recording", "processing")
+HISTORY_LIMIT = 100
 
 
 class Controller:
@@ -42,6 +44,13 @@ class Controller:
         self._audio_ok = False
         self.input_device = None          # None = system default
         self.output_device = None
+        # --- melody editing
+        self.snap_to_scale = True         # quantize the melody to the key (FR-7); off = free pitches
+        self.edit_rev = 0                 # bumps on every melody change (record, edit, undo)
+        self.built_rev = 0                # edit_rev that the current song was built from
+        self.melody_gen = 0               # bumps only when a NEW melody is recognised/loaded
+        self._undo, self._redo = [], []   # snapshots: (raw_notes, detected_key)
+        self._preview_cache = {}
 
     # ------------------------------------------------------------ setup
     def start(self):
@@ -56,7 +65,7 @@ class Controller:
             self._audio_ok = False
             self._set_state("error", message=f"Audio output unavailable: {e}")
             return False
-        if self.raw_notes:
+        if self.detected_key is not None:
             self._rebuild()                      # re-render at the device's sample rate
         return True
 
@@ -155,7 +164,12 @@ class Controller:
             self._set_state("error",
                             message="No notes detected. Hum a bit louder or closer to the mic.")
             return False
+        self._push_undo()                          # re-recording is undoable
+        self._redo.clear()
         self.raw_notes, self.detected_key = list(notes), key
+        self.snap_to_scale = True                  # fresh hum/demo: recognition snaps to the key
+        self.edit_rev += 1
+        self.melody_gen += 1
         self._rebuild()
         if autoplay and self._audio_ok:
             self.engine.play()
@@ -166,18 +180,22 @@ class Controller:
 
     def _rebuild(self):
         with self._build_lock:                     # params read inside the lock
-            if not self.raw_notes:
+            if self.detected_key is None:
                 return
+            rev = self.edit_rev
             root, mode = self.key_override or self.detected_key
-            melody = quantize(self.raw_notes, root, mode)
+            if self.snap_to_scale:
+                melody = quantize(self.raw_notes, root, mode)
+            else:
+                melody = [Note(n.midi, n.start, n.duration) for n in self.raw_notes]
             song = generate(melody, root, mode, self.bpm, self.genre, self.bars)
             tracks = render_tracks(song, sr=self.engine.sr)
-            self.song, self.tracks = song, tracks
+            self.song, self.tracks, self.built_rev = song, tracks, rev
             self.engine.set_loop(mix(tracks, song.genre, self.muted))
         self._on_result(song)
 
     def _rebuild_async(self):
-        if self.raw_notes and self.state not in BUSY_STATES:
+        if self.detected_key is not None and self.state not in BUSY_STATES:
             threading.Thread(target=self._rebuild, daemon=True).start()
 
     # --------------------------------------------------------- settings
@@ -191,6 +209,8 @@ class Controller:
 
     def set_key_override(self, key):
         self.key_override = key
+        if key is None and self.raw_notes:           # "Auto" = detect from the current melody
+            self.detected_key = detect_key(self.raw_notes) or self.detected_key
         self._rebuild_async()
 
     def set_track_enabled(self, name, enabled):
@@ -198,6 +218,86 @@ class Controller:
         if self.tracks and self.song:
             self.engine.set_loop(mix(self.tracks, self.song.genre, self.muted),
                                  mode="same_pos")
+
+    # ------------------------------------------------------ melody editing
+    @property
+    def can_undo(self):
+        return bool(self._undo)
+
+    @property
+    def can_redo(self):
+        return bool(self._redo)
+
+    def _snapshot(self):
+        return ([Note(n.midi, n.start, n.duration) for n in self.raw_notes], self.detected_key)
+
+    def _push_undo(self):
+        if self.detected_key is None:
+            return
+        self._undo.append(self._snapshot())
+        del self._undo[:-HISTORY_LIMIT]
+
+    def _restore(self, snap):
+        notes, key = snap
+        self.raw_notes, self.detected_key = [Note(n.midi, n.start, n.duration) for n in notes], key
+        self.edit_rev += 1
+        self._rebuild_async()
+        return self.edit_rev
+
+    def set_melody(self, notes):
+        """Replace the melody with user-edited notes (in beats); the band follows.
+
+        Returns the new edit revision, or None if editing isn't possible right now.
+        The edited notes stay the source of truth, so Record / Demo can still replace
+        them later (and Undo brings the old melody back).
+        """
+        if self.detected_key is None or self.state in BUSY_STATES:
+            return None
+        total = self.bars * 4
+        clean = []
+        for n in notes:
+            start = min(max(0.0, float(n.start)), total - 0.05)
+            dur = min(float(n.duration), total - start)
+            if dur > 0:
+                clean.append(Note(int(max(0, min(127, n.midi))), start, dur))
+        self._push_undo()
+        self._redo.clear()
+        self.raw_notes = sorted(clean, key=lambda n: (n.start, n.midi))
+        self.edit_rev += 1
+        self._rebuild_async()
+        return self.edit_rev
+
+    def undo(self):
+        if not self._undo or self.state in BUSY_STATES:
+            return None
+        self._redo.append(self._snapshot())
+        return self._restore(self._undo.pop())
+
+    def redo(self):
+        if not self._redo or self.state in BUSY_STATES:
+            return None
+        self._undo.append(self._snapshot())
+        return self._restore(self._redo.pop())
+
+    def set_scale_lock(self, enabled):
+        """Snap-to-key on/off. Turning it off keeps the notes exactly as displayed."""
+        enabled = bool(enabled)
+        if enabled == self.snap_to_scale:
+            return
+        if not enabled and self.song is not None:
+            self.raw_notes = [Note(n.midi, n.start, n.duration) for n in self.song.melody]
+        self.snap_to_scale = enabled
+        self._rebuild_async()
+
+    def preview_note(self, midi):
+        """Audition a pitch over the running loop (no-op without audio output)."""
+        if not self._audio_ok:
+            return
+        key = (int(midi), self.genre, self.engine.sr)
+        buf = self._preview_cache.get(key)
+        if buf is None:
+            buf = self._preview_cache[key] = preview_tone(key[0], self.genre, self.engine.sr)
+        self.engine.preview(buf)
 
     # --------------------------------------------------------- playback
     def play(self):

@@ -63,6 +63,10 @@ Priority: **M** = must have, **S** = should have, **C** = could have.
 | FR-15 | A built-in demo melody can be loaded without using the mic (fallback if the room is too loud). | S |
 | FR-16 | Toggle individual tracks (melody, chords, bass, drums) on or off during playback. | C |
 | FR-17 | Save the result as a WAV file. | C |
+| FR-18 | The melody on the piano roll can be edited on screen: move notes in time and pitch, resize them, add notes (double-click) and delete notes. The band regenerates from the edited melody. | S |
+| FR-19 | Several notes can be selected at once (Shift/Ctrl-click or a drag box) and moved, resized, transposed, nudged or deleted together, like a MIDI editor. | S |
+| FR-20 | Hum recognition is unchanged: Record / Demo still produce a melody that can then be edited, and Undo/Redo restore earlier melodies, including the one before a re-record. | S |
+| FR-21 | A piano-key guide on the left of the chart shows note names with octave, scale degrees, the key root and in-key / out-of-key rows. Edits can snap to the key (move by scale steps) and to a 1/4, 1/8 or 1/16 grid. | S |
 
 ## 5. Non-Functional Requirements
 

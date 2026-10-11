@@ -16,6 +16,30 @@ First thing to check on every machine (needs PortAudio, bundled on Win/macOS whe
 python -c "import kivy, sounddevice; print('ok')"
 ```
 
+## Editing the melody
+After a hum (or the demo) the melody appears on the piano roll and can be edited; the band
+rebuilds from your edits and swaps in at the next loop. Recording again still works - it just
+replaces the melody, and **Undo** brings the old one back.
+
+| Do this | To get this |
+|---|---|
+| Click a note | select it (it plays a short preview) |
+| Shift/Ctrl-click, or drag a box on empty space | select several notes |
+| Drag a selected note | move **all** selected notes together (time snaps to the grid; pitch moves by scale steps) |
+| Drag a note's right edge | resize all selected notes |
+| Double-click empty space / a note | add a note / delete that note |
+| Del, Up/Down, Left/Right | delete, transpose (scale step), nudge by one grid step |
+| Shift + Up/Down, Shift + Left/Right | transpose an octave, nudge a whole beat |
+| Ctrl+A, Ctrl+Z, Ctrl+Y (or Ctrl+Shift+Z), Esc | select all, undo, redo, deselect |
+| Mouse wheel over the chart | scroll the pitch range |
+| Click a key in the left gutter | hear that pitch |
+
+The left gutter is a piano-key guide: note name + octave, the scale degree (1-7) of each
+in-key row, the key's root in the accent colour, and a teal tick on every in-key row.
+Black-key rows are shaded. **Snap to key** keeps edits inside the key (turn it off for
+chromatic notes; those get a red top edge). **Grid** sets the snap for time (1/4, 1/8, 1/16).
+Choosing **Key: Auto** re-detects the key from the melody as it is now.
+
 ## Audio troubleshooting
 Run `python check_audio.py` first: it lists every input/output device, shows what the OS
 reports as default, opens mic + speakers exactly like the app, and prints a live level meter.
@@ -37,7 +61,8 @@ python render_demo.py   # demo melody -> demo_pop.wav / demo_lofi.wav
 
 ## Layout
 `core/` has no Kivy imports (NFR-8): `models, patterns, analysis, generator, pitch,
-audio_in, playback, controller`. `ui/` + `main.py` are the only Kivy code.
+audio_in, playback, controller, roll, editing` (`editing.EditSession` holds every
+editing rule; `ui/note_strip.py` only draws it and forwards mouse events). `ui/` + `main.py` are the only Kivy code.
 
 ## How it works
 - **Capture:** sounddevice callback only queues samples; a worker thread runs pitch

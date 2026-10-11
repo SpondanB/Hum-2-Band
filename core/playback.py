@@ -114,6 +114,12 @@ def mix(tracks, genre, muted=()):
     return (np.tanh(out * 1.2) * 0.9).astype(np.float32)
 
 
+def preview_tone(midi, genre="pop", sr=SR, dur=0.35):
+    """Short melody-voice blip used to audition a pitch while editing."""
+    voice = VOICES.get(genre, VOICES["pop"])["melody"]
+    return (_tone(_mtof(midi), dur, sr=sr, **voice) * 1.6 * TRACK_GAINS["melody"]).astype(np.float32)
+
+
 def click_buffer(bpm, beats=4, sr=SR):
     beat_n = int(round(60.0 / bpm * sr))
     buf = np.zeros(beat_n * beats, dtype=np.float32)
@@ -147,6 +153,8 @@ class AudioEngine:
         self._oneshot = None
         self._os_pos = 0
         self._os_done = None
+        self._preview = None
+        self._pv_pos = 0
 
     def start(self, device=None):
         """Open `device` (index or None = system default) at a rate it supports."""
@@ -203,6 +211,11 @@ class AudioEngine:
         self.playing = False
         self._os_pos, self._os_done, self._oneshot = 0, on_done, buf
 
+    def preview(self, buf):
+        """Mix a short sound on top of whatever is playing (does not stop the loop)."""
+        self._pv_pos = 0
+        self._preview = buf
+
     def fraction(self):
         loop = self._loop
         if loop is None or not self.playing:
@@ -213,6 +226,13 @@ class AudioEngine:
     def _callback(self, outdata, frames, time_info, status):
         out = np.zeros(frames, dtype=np.float32)
         self._fill(out, frames)
+        pv = self._preview
+        if pv is not None:
+            chunk = pv[self._pv_pos:self._pv_pos + frames]
+            out[:len(chunk)] += chunk
+            self._pv_pos += frames
+            if self._pv_pos >= len(pv):
+                self._preview = None
         outdata[:] = out[:, None]            # mono -> every output channel
 
     def _fill(self, out, frames):

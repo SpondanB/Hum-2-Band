@@ -14,7 +14,7 @@ class HumToBandApp(App):
     title = "Hum-to-Band"
 
     def build(self):
-        Window.size = (1100, 720)
+        Window.size = (1100, 780)
         Builder.load_file(os.path.join(HERE, "ui", "hum.kv"))
         self.screen = MainScreen()
         return self.screen

@@ -14,6 +14,15 @@
     size_hint_y: None
     height: dp(56)
 
+<EditButton@Button>:
+    background_normal: ''
+    background_down: ''
+    background_color: (0.17, 0.18, 0.22, 1) if self.disabled else ((0.28, 0.31, 0.38, 1) if self.state == 'normal' else (0.18, 0.5, 0.45, 1))
+    color: (0.45, 0.47, 0.52, 1) if self.disabled else (0.92, 0.94, 0.97, 1)
+    size_hint: None, None
+    size: dp(88), dp(40)
+    font_size: '15sp'
+
 <DarkSpinner@Spinner>:
     background_normal: ''
     background_color: (0.2, 0.22, 0.28, 1)
@@ -63,8 +72,57 @@
                 halign: 'right'
                 valign: 'middle'
                 text_size: self.size
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            spacing: dp(8)
+            EditButton:
+                text: 'Undo'
+                disabled: not root.can_undo
+                on_release: root.on_undo()
+            EditButton:
+                text: 'Redo'
+                disabled: not root.can_redo
+                on_release: root.on_redo()
+            EditButton:
+                text: 'Select all'
+                disabled: not root.can_edit
+                on_release: root.on_select_all()
+            EditButton:
+                text: 'Delete'
+                disabled: not root.can_edit
+                on_release: root.on_delete_notes()
+            DarkSpinner:
+                text: 'Grid: 1/8'
+                values: root.grid_choices
+                size_hint_x: None
+                width: dp(120)
+                height: dp(40)
+                font_size: '15sp'
+                on_text: root.on_grid(self.text)
+            TrackToggle:
+                text: 'Snap to key'
+                size_hint_x: None
+                width: dp(124)
+                height: dp(40)
+                font_size: '15sp'
+                state: 'down' if root.scale_lock else 'normal'
+                on_state: root.on_scale_lock(self.state == 'down')
+            Label:
+                text: root.edit_hint
+                font_size: '11sp'
+                shorten: True
+                shorten_from: 'right'
+                max_lines: 2
+                color: 0.62, 0.65, 0.72, 1
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
         NoteStrip:
             id: note_strip
+            editable: root.can_edit
+            edit_callback: root.on_edit_commit
+            preview_callback: root.on_preview_note
         ProgressBar:
             size_hint_y: None
             height: dp(8)

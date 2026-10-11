@@ -4,6 +4,7 @@ import threading
 import time
 
 from kivy.clock import Clock
+from kivy.core.window import Keyboard, Window
 from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
                              StringProperty)
 from kivy.uix.floatlayout import FloatLayout
@@ -11,6 +12,11 @@ from kivy.uix.floatlayout import FloatLayout
 from core.controller import Controller
 from core.patterns import GENRE_LABELS, NOTE_NAMES
 from ui.note_strip import NoteStrip  # noqa: F401  (needed by hum.kv)
+
+GRID_CHOICES = {"Grid: 1/4": 1.0, "Grid: 1/8": 0.5, "Grid: 1/16": 0.25}
+EDIT_HINT = ("Drag: move | right edge: resize | Shift-click or box: multi-select | "
+             "Double-click: add/delete | Del, arrows, Ctrl+Z")
+_KEY_NAMES = {code: name for name, code in Keyboard.keycodes.items()}
 
 KEY_CHOICES = ["Key: Auto"] + [f"{n} {m}" for m in ("major", "minor") for n in NOTE_NAMES]
 
@@ -43,6 +49,13 @@ class MainScreen(FloatLayout):
     default_out = StringProperty("Output: system default")
     input_names = ListProperty(["Mic: system default"])
     output_names = ListProperty(["Output: system default"])
+    # --- melody editing
+    can_edit = BooleanProperty(False)
+    can_undo = BooleanProperty(False)
+    can_redo = BooleanProperty(False)
+    scale_lock = BooleanProperty(True)
+    grid_choices = ListProperty(list(GRID_CHOICES))
+    edit_hint = StringProperty(EDIT_HINT)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -52,6 +65,9 @@ class MainScreen(FloatLayout):
                                      on_result=_ui(self._on_result))
         self._in_map, self._out_map = {}, {}
         self._saving = False
+        self._local_rev = 0          # newest melody revision the user created on screen
+        self._seen_gen = 0           # last recognised/loaded melody shown (to re-centre the roll)
+        Window.bind(on_key_down=self._on_key_down)
         Clock.schedule_once(self._startup, 0.3)
         Clock.schedule_interval(self._tick_playhead, 1 / 60.0)
 
@@ -110,10 +126,19 @@ class MainScreen(FloatLayout):
         self.level = level
 
     def _on_result(self, song):
-        self.ids.note_strip.set_song(song)
-        self.key_text = self.controller.key_text()
-        self.chords_text = self.controller.chords_text()
+        c = self.controller
+        # A result built from an older melody than the user's latest on-screen edit is stale:
+        # skip it (a newer one is on its way) so the roll never jumps back.
+        if c.built_rev >= self._local_rev:
+            fit = c.melody_gen != self._seen_gen
+            self._seen_gen = c.melody_gen
+            self.ids.note_strip.set_song(c.song or song, fit=fit)
+        self.scale_lock = c.snap_to_scale
+        self.ids.note_strip.set_scale_lock(c.snap_to_scale)
+        self.key_text = c.key_text()
+        self.chords_text = c.chords_text()
         self.can_play = True
+        self._sync_edit_state()
 
     def _on_state(self, state, info):
         self.state = state
@@ -123,6 +148,7 @@ class MainScreen(FloatLayout):
         busy = state in ("counting", "recording", "processing")
         self.can_record = not busy
         self.can_play = (not busy) and self.controller.song is not None
+        self._sync_edit_state()
         self.record_text = "Retry" if state == "error" else (
             "Re-record" if self.controller.song else "Record")
         self.play_text = "Stop" if state == "playing" else "Play"
@@ -168,6 +194,89 @@ class MainScreen(FloatLayout):
     def _tick_playhead(self, dt):
         beats = self.controller.playhead_beats() if self.controller else None
         self.ids.note_strip.playhead = -1 if beats is None else beats
+
+    # ------------------------------------------------------ melody editing
+    def _sync_edit_state(self):
+        c = self.controller
+        busy = self.state in ("counting", "recording", "processing")
+        self.can_edit = bool(c and c.song is not None and not busy)
+        self.can_undo = bool(c and c.can_undo and not busy)
+        self.can_redo = bool(c and c.can_redo and not busy)
+
+    def on_edit_commit(self, notes):
+        """The user finished an edit gesture on the piano roll."""
+        if not self.controller:
+            return
+        rev = self.controller.set_melody(notes)
+        if rev is not None:
+            self._local_rev = rev
+            self.status_text = "Melody edited - the band follows on the next loop"
+        self._sync_edit_state()
+
+    def on_preview_note(self, midi):
+        if self.controller:
+            self.controller.preview_note(midi)
+
+    def _history(self, step):
+        rev = step()
+        if rev is not None:
+            self._local_rev = rev
+            self.ids.note_strip.clear_selection()
+            self.ids.note_strip.reveal_all_on_next_update()
+        self._sync_edit_state()
+
+    def on_undo(self):
+        if self.controller:
+            self._history(self.controller.undo)
+
+    def on_redo(self):
+        if self.controller:
+            self._history(self.controller.redo)
+
+    def on_select_all(self):
+        self.ids.note_strip.select_all()
+
+    def on_delete_notes(self):
+        self.ids.note_strip.delete_selected()
+
+    def on_grid(self, text):
+        strip = self.ids.get("note_strip")       # also fires while the kv is still loading
+        if strip is not None:
+            strip.set_grid(GRID_CHOICES.get(text, 0.5))
+
+    def on_scale_lock(self, enabled):
+        strip = self.ids.get("note_strip")
+        if strip is not None:
+            strip.set_scale_lock(enabled)
+        if self.controller and enabled != self.controller.snap_to_scale:
+            self.controller.set_scale_lock(enabled)
+
+    def _on_key_down(self, window, key, scancode=None, codepoint=None, modifiers=None, *args):
+        strip = self.ids.get("note_strip")
+        if strip is None or not self.can_edit:
+            return False
+        mods = set(modifiers or [])
+        ctrl, shift = bool(mods & {"ctrl", "meta"}), "shift" in mods
+        name = _KEY_NAMES.get(key)
+        grid = strip.session.grid
+        if ctrl and name == "a":
+            strip.select_all()
+        elif ctrl and name == "z" and not shift:
+            self.on_undo()
+        elif ctrl and (name == "y" or (name == "z" and shift)):
+            self.on_redo()
+        elif name in ("delete", "backspace"):
+            strip.delete_selected()
+        elif name in ("up", "down"):
+            sign = 1 if name == "up" else -1
+            strip.transpose(steps=0 if shift else sign, octaves=sign if shift else 0)
+        elif name in ("left", "right"):
+            strip.nudge((1.0 if shift else grid) * (1 if name == "right" else -1))
+        elif name == "escape" and strip.session.selected:
+            strip.clear_selection()
+        else:
+            return False
+        return True
 
     # ------------------------------------------------------- user actions
     def on_record(self):
