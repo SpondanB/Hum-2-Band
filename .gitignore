@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and distribution
+build/
+dist/
+*.egg-info/
+docs/build/
+
+# Sphinx build artifacts
+docs/build/
+docs/build/html/
+docs/build/doctrees/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Testing / tools
+.pytest_cache/
+pip-wheel-metadata/
+*.egg
+.mypy_cache/
+
+# Local settings
+.env
+.venv
+_build/

@@ -1,0 +1,11 @@
+Hours	Task
+0:00-0:45	Set up a single-page web app (plain HTML/JS, or Vite) with mic access and Pitchy. Show the live detected note on screen. Deploy it somewhere shareable.
+0:45-1:45	Record a 4-bar hum with a metronome click. Convert the pitch stream into discrete notes (merge frames, drop anything under about 100 ms, ignore low-confidence frames).
+1:45-2:45	Quantize notes to the best-fitting major or minor scale. Detect the key by scoring each of the 24 keys against the notes you heard. Play the cleaned melody back with Tone.js.
+2:45	Checkpoint: hum, then hear a cleaned-up melody in the right key. If this isn't working, simplify to "pick the key manually" and move on.
+2:45-3:45	Rule-based chords: for each bar, pick from the key's diatonic chords (I, ii, IV, V, vi) the one that contains the most melody notes. Play them with a Tone.js PolySynth.
+3:45-4:45	Add a root-note bass line and one or two drum patterns (for example "pop" and "lo-fi") with a toggle. Add a tempo slider.
+4:45-5:15	Minimal UI polish: big record button, a simple note display (a row of boxes or a piano-roll strip), and a "play again" button. Add a basic noise gate (ignore pitch below a volume threshold).
+5:15-6:00	Test with 2 or 3 different voices, record a backup demo video, and write a 60-second pitch.
+
+
