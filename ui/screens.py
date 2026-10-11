@@ -7,7 +7,13 @@ from kivy.clock import Clock
 from kivy.core.window import Keyboard, Window
 from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
                              StringProperty)
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.textinput import TextInput
 
 from core.controller import Controller
 from core.patterns import (BASS_STYLE_OPTIONS, DRUM_STYLE_OPTIONS, GENRE_LABELS,
@@ -33,7 +39,7 @@ class MainScreen(FloatLayout):
     controller = None  # class-level so kv-triggered handlers can run safely at init
 
     state = StringProperty("idle")
-    status_text = StringProperty("Tap Record, then hum 4 bars")
+    status_text = StringProperty("Ready to hum. Press Record when you're set.")
     key_text = StringProperty("Key: --")
     chords_text = StringProperty("")
     live_note = StringProperty("--")
@@ -177,7 +183,7 @@ class MainScreen(FloatLayout):
             self.progress = 0
 
         if state == "idle":
-            self.status_text = "Tap Record, then hum 4 bars"
+            self.status_text = "Ready to hum. Press Record when you're set."
         elif state == "counting":
             self.status_text = "Get ready..."
             self._beat = 1
@@ -350,48 +356,56 @@ class MainScreen(FloatLayout):
         if self.controller:
             self.controller.set_track_enabled(name, enabled)
 
-    def _ask_save_path(self, initialfile="hum_to_band.wav", title="Save Audio As"):
-        try:
-            try:
-                import pythoncom
-                pythoncom.CoInitialize()
-            except Exception:
-                pass
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            try:
-                root.attributes("-topmost", True)
-            except Exception:
-                pass
-            path = filedialog.asksaveasfilename(
-                parent=root,
-                initialdir=os.path.expanduser("~"),
-                initialfile=initialfile,
-                defaultextension=".wav",
-                filetypes=[("WAV Audio (*.wav)", "*.wav"), ("All Files (*.*)", "*.*")],
-                title=title,
-            )
-            root.destroy()
-            return path if path else None
-        except Exception:
-            return None
-
-    def on_save(self):
-        if getattr(self, "_saving", False) or not self.controller:
+    def _open_save_dialog(self, initialfile, title, save_action):
+        if getattr(self, "_saving", False):
             return
         self._saving = True
+        chooser = FileChooserListView(path=os.path.expanduser("~"), filters=["*.wav"])
+        filename = TextInput(text=initialfile, multiline=False, size_hint_y=None, height=44)
+        content = BoxLayout(orientation="vertical", spacing=8, padding=10)
+        content.add_widget(chooser)
+        content.add_widget(Label(text="File name", size_hint_y=None, height=24,
+                                 halign="left", valign="middle"))
+        content.add_widget(filename)
+        actions = BoxLayout(size_hint_y=None, height=44, spacing=8)
+        save_button = Button(text="Save")
+        cancel_button = Button(text="Cancel")
+        actions.add_widget(save_button)
+        actions.add_widget(cancel_button)
+        content.add_widget(actions)
+        popup = Popup(title=title, content=content, size_hint=(0.82, 0.82), auto_dismiss=False)
 
-        def work():
+        def close(*_):
+            self._saving = False
+            popup.dismiss()
+
+        def save(*_):
+            name = filename.text.strip()
+            if not name:
+                self.status_text = "Enter a file name to save"
+                return
+            if not name.lower().endswith(".wav"):
+                name += ".wav"
+            path = os.path.join(chooser.path, name)
             try:
-                path = self._ask_save_path()
-                if path and self.controller.save_wav(path):
-                    Clock.schedule_once(lambda dt: setattr(self, "status_text", f"Saved {path}"), 0)
-            finally:
-                self._saving = False
+                if save_action(path):
+                    self.status_text = f"Saved {path}"
+                else:
+                    self.status_text = "Nothing to save yet"
+            except Exception as exc:
+                self.status_text = f"Save failed: {exc}"
+            close()
 
-        threading.Thread(target=work, daemon=True).start()
+        save_button.bind(on_release=save)
+        cancel_button.bind(on_release=close)
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_saving", False))
+        popup.open()
+        self._save_popup = popup
+
+    def on_save(self):
+        if not self.controller:
+            return
+        self._open_save_dialog("hum2band.wav", "Save Backing Track", self.controller.save_wav)
 
     def on_play_reference(self):
         if self.controller and not self.controller.play_reference():
@@ -403,16 +417,7 @@ class MainScreen(FloatLayout):
             self.controller.set_reference_mix(enabled)
 
     def on_save_reference(self):
-        if getattr(self, "_saving", False) or not self.controller or not self.can_reference:
+        if not self.controller or not self.can_reference:
             return
-        self._saving = True
-
-        def work():
-            try:
-                path = self._ask_save_path("hummed_reference.wav", "Save Hummed Reference")
-                if path and self.controller.save_reference_wav(path):
-                    Clock.schedule_once(lambda dt: setattr(self, "status_text", f"Saved {path}"), 0)
-            finally:
-                self._saving = False
-
-        threading.Thread(target=work, daemon=True).start()
+        self._open_save_dialog("hummed_reference.wav", "Save Hummed Reference",
+                               self.controller.save_reference_wav)

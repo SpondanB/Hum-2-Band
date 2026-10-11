@@ -13,10 +13,10 @@ from kivy.uix.widget import Widget
 from core.editing import BLACK_PCS, EditSession, pitch_name, scale_degree, scale_pcs
 from core.roll import RollGeometry
 
-ACCENT = (0.18, 0.85, 0.72)
-SELECTED = (1.0, 0.78, 0.25)
-WARN = (0.95, 0.27, 0.30)
-DARK = (0.04, 0.05, 0.07)
+ACCENT = (0.94, 0.42, 0.19)
+SELECTED = (1.0, 0.68, 0.32)
+WARN = (0.86, 0.24, 0.20)
+DARK = (0.08, 0.055, 0.055)
 
 _KEYCODES = Keyboard.keycodes
 # Kivy names its modifier keys inconsistently across versions, so accept all the spellings.

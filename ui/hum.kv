@@ -1,31 +1,37 @@
 #:import dp kivy.metrics.dp
-#:set ACCENT (0.18, 0.85, 0.72, 1)
-#:set RED (0.95, 0.27, 0.30, 1)
-#:set DARK (0.04, 0.05, 0.07, 1)
+#:set ACCENT (0.88, 0.36, 0.15, 1)
+#:set ACCENT_DOWN (0.69, 0.23, 0.13, 1)
+#:set RED (0.83, 0.23, 0.19, 1)
+#:set DARK (0.08, 0.055, 0.055, 1)
+#:set SURFACE (0.18, 0.12, 0.11, 1)
+#:set SURFACE_DOWN (0.28, 0.17, 0.14, 1)
+#:set TEXT (0.94, 0.88, 0.82, 1)
+#:set MUTED (0.64, 0.55, 0.51, 1)
 
 <AccentButton@Button>:
     background_normal: ''
     background_down: ''
-    background_color: (0.25, 0.27, 0.32, 1) if self.disabled else (ACCENT if self.state == 'normal' else (0.12, 0.6, 0.5, 1))
-    color: DARK
-    disabled_color: (0.55, 0.57, 0.62, 1)
+    background_color: (0.16, 0.12, 0.12, 1) if self.disabled else ((RED if self.text == 'Stop' else ACCENT) if self.text in ('Record', 'Re-record', 'Stop') else (SURFACE if self.state == 'normal' else SURFACE_DOWN))
+    color: TEXT
+    disabled_color: MUTED
     bold: True
-    font_size: '20sp'
+    font_size: '18sp'
     size_hint_y: None
-    height: dp(56)
+    height: dp(52)
 
 <EditButton@Button>:
     background_normal: ''
     background_down: ''
-    background_color: (0.17, 0.18, 0.22, 1) if self.disabled else ((0.28, 0.31, 0.38, 1) if self.state == 'normal' else (0.18, 0.5, 0.45, 1))
-    color: (0.45, 0.47, 0.52, 1) if self.disabled else (0.92, 0.94, 0.97, 1)
+    background_color: (0.14, 0.11, 0.11, 1) if self.disabled else (SURFACE if self.state == 'normal' else SURFACE_DOWN)
+    color: MUTED if self.disabled else TEXT
     size_hint: None, None
     size: dp(88), dp(40)
     font_size: '15sp'
 
 <DarkSpinner@Spinner>:
     background_normal: ''
-    background_color: (0.2, 0.22, 0.28, 1)
+    background_color: SURFACE
+    color: TEXT
     size_hint_y: None
     height: dp(48)
     font_size: '18sp'
@@ -33,8 +39,8 @@
 <TrackToggle@ToggleButton>:
     background_normal: ''
     background_down: ''
-    background_color: ACCENT if self.state == 'down' else (0.25, 0.27, 0.32, 1)
-    color: DARK if self.state == 'down' else (0.8, 0.8, 0.85, 1)
+    background_color: ACCENT_DOWN if self.state == 'down' else SURFACE
+    color: TEXT if self.state == 'down' else (0.78, 0.71, 0.67, 1)
     size_hint_y: None
     height: dp(48)
     font_size: '16sp'
@@ -42,7 +48,7 @@
 <MainScreen>:
     canvas.before:
         Color:
-            rgba: 0.07, 0.08, 0.11, 1
+            rgba: 0.075, 0.052, 0.054, 1
         Rectangle:
             pos: self.pos
             size: self.size
@@ -54,7 +60,7 @@
             size_hint_y: None
             height: dp(48)
             Label:
-                text: 'Hum-to-Band'
+                text: 'Hum2Band'
                 font_size: '26sp'
                 bold: True
                 color: ACCENT
@@ -64,11 +70,12 @@
             Label:
                 text: root.chords_text
                 font_size: '18sp'
-                color: 0.75, 0.77, 0.82, 1
+                color: (0.78, 0.68, 0.62, 1)
             Label:
                 text: root.key_text
-                font_size: '24sp'
+                font_size: '21sp'
                 bold: True
+                color: TEXT
                 halign: 'right'
                 valign: 'middle'
                 text_size: self.size
@@ -114,7 +121,7 @@
                 shorten: True
                 shorten_from: 'right'
                 max_lines: 2
-                color: 0.62, 0.65, 0.72, 1
+                color: MUTED
                 halign: 'left'
                 valign: 'middle'
                 text_size: self.size
@@ -137,7 +144,7 @@
                 width: dp(28)
                 canvas:
                     Color:
-                        rgba: RED if root.is_recording else (0.3, 0.3, 0.35, 1)
+                        rgba: RED if root.is_recording else (0.35, 0.23, 0.20, 1)
                     Ellipse:
                         pos: self.x + dp(4), self.center_y - dp(10)
                         size: dp(20), dp(20)
@@ -154,7 +161,7 @@
             Label:
                 text: root.status_text
                 font_size: '18sp'
-                color: RED if root.state == 'error' else (0.85, 0.87, 0.9, 1)
+                color: RED if root.state == 'error' else TEXT
                 halign: 'left'
                 valign: 'middle'
                 text_size: self.size
@@ -172,7 +179,7 @@
                 disabled: not root.can_play
                 on_release: root.on_play_stop()
             AccentButton:
-                text: 'Demo melody'
+                text: 'Try demo'
                 disabled: not root.can_record
                 on_release: root.on_demo()
             AccentButton:
@@ -236,28 +243,35 @@
                 size_hint_y: None
                 height: dp(48)
                 background_normal: ''
-                background_color: 0.2, 0.22, 0.28, 1
+                background_color: SURFACE
+                color: TEXT
                 on_release: root.on_refresh()
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(10)
             Label:
                 text: 'Mic gain'
                 size_hint_x: None
-                width: dp(80)
+                width: dp(90)
+                color: MUTED
             Slider:
                 min: 0.25
                 max: 12
                 value: 2
-                size_hint_x: 0.6
+                size_hint_x: 1
                 on_value: root.on_gain(self.value)
             Label:
-                text: 'Hum max'
+                text: 'Max hum'
                 size_hint_x: None
-                width: dp(70)
+                width: dp(80)
+                color: MUTED
             Slider:
                 min: 5
                 max: 45
                 step: 1
                 value: 45
-                size_hint_x: 0.7
+                size_hint_x: 1
                 on_value: root.set_record_limit(self.value)
             Label:
                 text: root.record_limit_text

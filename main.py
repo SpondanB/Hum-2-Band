@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 class HumToBandApp(App):
-    title = "Hum-to-Band"
+    title = "Hum2Band"
 
     def build(self):
         Window.size = (1100, 780)
