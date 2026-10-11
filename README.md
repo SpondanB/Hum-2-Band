@@ -16,6 +16,19 @@ First thing to check on every machine (needs PortAudio, bundled on Win/macOS whe
 python -c "import kivy, sounddevice; print('ok')"
 ```
 
+## Audio troubleshooting
+Run `python check_audio.py` first: it lists every input/output device, shows what the OS
+reports as default, opens mic + speakers exactly like the app, and prints a live level meter.
+- The app reads the OS default devices **at launch**. After changing the default mic/speakers
+  (or plugging in a headset) click **Refresh audio**, or pick a device in the dropdowns.
+- The app uses each device's native sample rate (44.1/48 kHz), mono or stereo.
+- Level bar never moves: mic muted/low in OS settings, wrong input selected, or the OS
+  mic privacy permission is off (Windows: Settings > Privacy > Microphone; macOS: allow
+  your terminal/Python). Use **Mic gain** for quiet mics.
+- To feed the app *system* audio (what your computer is playing) instead of a mic, pick a
+  loopback device as the input: "Stereo Mix" (Windows), BlackHole/Loopback (macOS),
+  a PulseAudio "Monitor of ..." source (Linux). The app has no built-in loopback capture.
+
 ## Test (no mic, speakers or Kivy needed)
 ```
 pytest            # or: python run_tests.py

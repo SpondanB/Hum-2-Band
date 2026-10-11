@@ -138,6 +138,7 @@ def write_wav(path, data, sr=SR):
 class AudioEngine:
     def __init__(self, sr=SR):
         self.sr = sr
+        self.device_name = ""
         self._stream = None
         self._loop = None
         self._pending = None
@@ -147,12 +148,28 @@ class AudioEngine:
         self._os_pos = 0
         self._os_done = None
 
-    def start(self):
+    def start(self, device=None):
+        """Open `device` (index or None = system default) at a rate it supports."""
         import sounddevice as sd
-        self._stream = sd.OutputStream(samplerate=self.sr, channels=1, dtype="float32",
-                                       blocksize=512, latency="low",
-                                       callback=self._callback)
-        self._stream.start()
+        self.stop_stream()
+        info = sd.query_devices(device, "output")
+        max_ch = max(1, int(info["max_output_channels"]))
+        default = int(info["default_samplerate"])
+        last = None
+        for sr in [default] + [r for r in (48000, 44100) if r != default]:
+            for ch in (1, min(2, max_ch)):
+                for latency in ("low", "high"):
+                    try:
+                        stream = sd.OutputStream(device=device, samplerate=sr, channels=ch,
+                                                 dtype="float32", blocksize=512,
+                                                 latency=latency, callback=self._callback)
+                        stream.start()
+                    except Exception as e:
+                        last = e
+                        continue
+                    self._stream, self.sr, self.device_name = stream, sr, info["name"]
+                    return
+        raise RuntimeError(f"Could not open output '{info['name']}': {last}")
 
     def stop_stream(self):
         if self._stream is not None:
@@ -194,8 +211,11 @@ class AudioEngine:
 
     # -- audio thread
     def _callback(self, outdata, frames, time_info, status):
-        out = outdata[:, 0]
-        out[:] = 0.0
+        out = np.zeros(frames, dtype=np.float32)
+        self._fill(out, frames)
+        outdata[:] = out[:, None]            # mono -> every output channel
+
+    def _fill(self, out, frames):
         shot = self._oneshot
         if shot is not None:
             chunk = shot[self._os_pos:self._os_pos + frames]

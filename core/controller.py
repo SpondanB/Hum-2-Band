@@ -8,10 +8,11 @@ import os
 import threading
 
 from .analysis import detect_key, frames_to_notes, midi_to_name, quantize
-from .audio_in import MicError, MicRecorder, level_from_rms
+from .audio_in import (MicError, MicRecorder, level_from_rms, list_devices,
+                       refresh_portaudio)
 from .generator import chord_labels, generate
 from .models import Note
-from .pitch import HOP, SR
+from .pitch import HOP
 from .playback import AudioEngine, click_buffer, mix, render_tracks, write_wav
 
 DEMO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "demo_melody.json")
@@ -39,25 +40,72 @@ class Controller:
         self._rec_bpm = self.bpm
         self._build_lock = threading.Lock()
         self._audio_ok = False
+        self.input_device = None          # None = system default
+        self.output_device = None
 
     # ------------------------------------------------------------ setup
     def start(self):
+        self._open_output()
+        self._open_mic()
+
+    def _open_output(self):
         try:
-            self.engine.start()
+            self.engine.start(self.output_device)
             self._audio_ok = True
         except Exception as e:
+            self._audio_ok = False
             self._set_state("error", message=f"Audio output unavailable: {e}")
-            return
-        self._open_mic()
+            return False
+        if self.raw_notes:
+            self._rebuild()                      # re-render at the device's sample rate
+        return True
 
     def _open_mic(self):
         try:
-            self.recorder.start()
+            self.recorder.start(self.input_device)
         except MicError as e:
             self._set_state("error", message=str(e))
             return False
         self._set_state("ready" if self.song else "idle")
         return True
+
+    # ------------------------------------------------------ devices
+    def list_devices(self):
+        """(inputs, outputs): lists of (index, label, default_rate)."""
+        try:
+            return list_devices("input"), list_devices("output")
+        except Exception:
+            return [], []
+
+    def restart_audio(self):
+        """Re-scan OS devices/defaults and reopen both streams (the Refresh button)."""
+        if self.state in BUSY_STATES:
+            return
+        self.recorder.stop()
+        self.engine.stop_stream()
+        self.engine.stop()
+        refresh_portaudio()
+        ins, outs = self.list_devices()
+        if self.input_device not in [d[0] for d in ins]:
+            self.input_device = None
+        if self.output_device not in [d[0] for d in outs]:
+            self.output_device = None
+        self.start()
+
+    def set_input_device(self, index):
+        self.input_device = index
+        if self.state not in BUSY_STATES:
+            self._open_mic()
+
+    def set_output_device(self, index):
+        self.output_device = index
+        if self.state not in BUSY_STATES:
+            was_playing = self.engine.playing
+            if self._open_output() and was_playing:
+                self.play()
+
+    def set_input_gain(self, gain):
+        self.recorder.gain = float(gain)
 
     def shutdown(self):
         self.recorder.stop()
@@ -77,7 +125,7 @@ class Controller:
         self.engine.stop()
         self._rec_bpm = self.bpm
         self._set_state("counting", bpm=self._rec_bpm)
-        self.engine.play_oneshot(click_buffer(self._rec_bpm), self._count_in_done)
+        self.engine.play_oneshot(click_buffer(self._rec_bpm, sr=self.engine.sr), self._count_in_done)
 
     def _count_in_done(self):                       # audio thread: keep it light
         duration = self.bars * 4 * 60.0 / self._rec_bpm
@@ -90,7 +138,7 @@ class Controller:
 
     def _finish_recording(self, frames):
         try:
-            notes = frames_to_notes(frames, self._rec_bpm, self.bars, hop_s=HOP / SR)
+            notes = frames_to_notes(frames, self._rec_bpm, self.bars, hop_s=HOP / self.recorder.sr)
             self.process_notes(notes)
         except Exception as e:
             self._set_state("error", message=f"Something went wrong: {e}")
@@ -123,7 +171,7 @@ class Controller:
             root, mode = self.key_override or self.detected_key
             melody = quantize(self.raw_notes, root, mode)
             song = generate(melody, root, mode, self.bpm, self.genre, self.bars)
-            tracks = render_tracks(song)
+            tracks = render_tracks(song, sr=self.engine.sr)
             self.song, self.tracks = song, tracks
             self.engine.set_loop(mix(tracks, song.genre, self.muted))
         self._on_result(song)
@@ -178,7 +226,7 @@ class Controller:
     def save_wav(self, path):
         if self.tracks is None or self.song is None:
             return False
-        write_wav(path, mix(self.tracks, self.song.genre, self.muted))
+        write_wav(path, mix(self.tracks, self.song.genre, self.muted), sr=self.engine.sr)
         return True
 
     def key_text(self):

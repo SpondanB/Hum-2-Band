@@ -1,5 +1,6 @@
 """Main screen logic. The ONLY layer (besides note_strip/main) that imports Kivy."""
 import os
+import threading
 import time
 
 from kivy.clock import Clock
@@ -38,6 +39,10 @@ class MainScreen(FloatLayout):
     can_play = BooleanProperty(False)
     is_recording = BooleanProperty(False)
     key_choices = ListProperty(KEY_CHOICES)
+    default_in = StringProperty("Mic: system default")
+    default_out = StringProperty("Output: system default")
+    input_names = ListProperty(["Mic: system default"])
+    output_names = ListProperty(["Output: system default"])
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -45,8 +50,58 @@ class MainScreen(FloatLayout):
         self.controller = Controller(on_state=_ui(self._on_state),
                                      on_live=_ui(self._on_live),
                                      on_result=_ui(self._on_result))
-        Clock.schedule_once(lambda dt: self.controller.start(), 0.3)
+        self._in_map, self._out_map = {}, {}
+        Clock.schedule_once(self._startup, 0.3)
         Clock.schedule_interval(self._tick_playhead, 1 / 60.0)
+
+    # --------------------------------------------------------------- audio devices
+    def _startup(self, dt):
+        self._populate_devices()
+        threading.Thread(target=self.controller.start, daemon=True).start()
+
+    def _populate_devices(self):
+        ins, outs = self.controller.list_devices()
+        self._in_map = {label: idx for idx, label, _ in ins}
+        self._out_map = {label: idx for idx, label, _ in outs}
+        self.input_names = [self.default_in] + list(self._in_map)
+        self.output_names = [self.default_out] + list(self._out_map)
+
+    def _reset_spinners(self):
+        c = self.controller
+        self.ids.in_dev.text = next((k for k, v in self._in_map.items()
+                                     if v == c.input_device), self.default_in)
+        self.ids.out_dev.text = next((k for k, v in self._out_map.items()
+                                      if v == c.output_device), self.default_out)
+
+    def on_refresh(self):
+        """Re-read OS devices + default mic/speakers (after changing sound settings)."""
+        if self.state in ("counting", "recording", "processing"):
+            return
+        self.status_text = "Refreshing audio devices..."
+        def work():
+            self.controller.restart_audio()
+            Clock.schedule_once(lambda dt: (self._populate_devices(), self._reset_spinners()), 0)
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_input_device(self, text):
+        if not self.controller:
+            return
+        idx = self._in_map.get(text)          # "system default" -> None
+        if idx != self.controller.input_device:
+            threading.Thread(target=self.controller.set_input_device,
+                             args=(idx,), daemon=True).start()
+
+    def on_output_device(self, text):
+        if not self.controller:
+            return
+        idx = self._out_map.get(text)
+        if idx != self.controller.output_device:
+            threading.Thread(target=self.controller.set_output_device,
+                             args=(idx,), daemon=True).start()
+
+    def on_gain(self, value):
+        if self.controller:
+            self.controller.set_input_gain(value)
 
     # ----------------------------------------------------- controller events
     def _on_live(self, note, level):

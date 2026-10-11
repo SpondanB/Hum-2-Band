@@ -56,6 +56,6 @@ def test_save_wav_and_mute():
 
 def test_missing_mic_reports_error():
     c = make()
-    c.recorder.start = lambda: (_ for _ in ()).throw(__import__("core.audio_in").audio_in.MicError("none"))
+    c.recorder.start = lambda *a: (_ for _ in ()).throw(__import__("core.audio_in").audio_in.MicError("none"))
     c.record()
     assert states[-1][0] == "error"

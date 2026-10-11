@@ -69,3 +69,12 @@ def test_engine_stopped_is_silent_and_oneshot_calls_back():
     for _ in range(n // 512 + 1):
         _pull(eng, 512)
     assert done == [1]
+
+
+def test_engine_callback_fills_every_output_channel():
+    eng = AudioEngine()
+    a = np.arange(1, 101, dtype=np.float32)
+    eng.set_loop(a); eng.play()
+    out = np.zeros((64, 2), dtype=np.float32)
+    eng._callback(out, 64, None, None)
+    assert np.array_equal(out[:, 0], a[:64]) and np.array_equal(out[:, 1], a[:64])

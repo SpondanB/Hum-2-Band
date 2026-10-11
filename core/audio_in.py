@@ -22,6 +22,34 @@ class MicError(Exception):
     pass
 
 
+def refresh_portaudio():
+    """Re-scan devices so OS-level changes (new default mic, plugged headset) are seen.
+    Only safe while no streams are open."""
+    try:
+        import sounddevice as sd
+        sd._terminate()
+        sd._initialize()
+    except Exception:
+        pass
+
+
+def list_devices(kind):
+    """[(index, label, default_samplerate)] for 'input' or 'output' devices."""
+    import sounddevice as sd
+    apis = sd.query_hostapis()
+    out = []
+    for i, d in enumerate(sd.query_devices()):
+        ch = d["max_input_channels"] if kind == "input" else d["max_output_channels"]
+        if ch > 0:
+            out.append((i, f"{i}: {d['name']} [{apis[d['hostapi']]['name']}]",
+                        int(d["default_samplerate"])))
+    return out
+
+
+def candidate_rates(default_rate):
+    return [default_rate] + [r for r in (48000, 44100) if r != default_rate]
+
+
 def level_from_rms(rms: float) -> float:
     """Map RMS to a 0..1 meter value (-60 dBFS .. 0 dBFS)."""
     db = 20 * math.log10(max(rms, 1e-6))
@@ -35,12 +63,16 @@ class MicRecorder:
         self.on_capture_done = on_capture_done
         self.gate = NOISE_GATE_RMS
         self.conf_threshold = CONF_THRESHOLD
+        self.gain = 1.0                    # software input gain
         self.detector = make_detector(True, sr)
         self.running = False
+        self.device_name = ""
         self._q = queue.Queue()
         self._stream = None
         self._thread = None
-        # worker state
+        self._reset_worker_state()
+
+    def _reset_worker_state(self):
         self._pending = np.zeros(0, dtype=np.float32)
         self._win = np.zeros(WIN, dtype=np.float32)
         self._total = 0
@@ -50,26 +82,48 @@ class MicRecorder:
         self._frames = []
 
     # ---- lifecycle -------------------------------------------------
-    def start(self):
+    def start(self, device=None):
+        """Open `device` (index or None = system default) at a rate it supports."""
+        self.stop()
         try:
             import sounddevice as sd
         except Exception as e:  # PortAudio missing, package missing...
             raise MicError(f"Audio library unavailable: {e}")
         try:
-            sd.check_input_settings(channels=1, samplerate=self.sr)
-            self._stream = sd.InputStream(samplerate=self.sr, channels=1, dtype="float32",
-                                          blocksize=HOP, callback=self._callback)
-            self._stream.start()
+            info = sd.query_devices(device, "input")
         except Exception as e:
-            self._stream = None
             raise MicError(f"No microphone available. Check your input device. ({e})")
+        max_ch = max(1, int(info["max_input_channels"]))
+        last = None
+        for sr in candidate_rates(int(info["default_samplerate"])):
+            for ch in (1, min(2, max_ch)):
+                try:
+                    stream = sd.InputStream(device=device, samplerate=sr, channels=ch,
+                                            dtype="float32", blocksize=HOP,
+                                            callback=self._callback)
+                    stream.start()
+                except Exception as e:
+                    last = e
+                    continue
+                self._stream, self.sr, self.device_name = stream, sr, info["name"]
+                self._begin_worker()
+                return
+        raise MicError(f"Could not open '{info['name']}' ({last}). "
+                       "Pick another input device or check OS privacy/mic permissions.")
+
+    def _begin_worker(self):
+        self._reset_worker_state()
+        self.detector = make_detector(True, self.sr)
+        self._q = queue.Queue()            # fresh queue: old worker can't steal items
         self.running = True
-        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread = threading.Thread(target=self._worker, args=(self._q,), daemon=True)
         self._thread.start()
 
     def stop(self):
+        was = self.running
         self.running = False
-        self._q.put(None)
+        if was:
+            self._q.put(None)
         if self._stream is not None:
             try:
                 self._stream.stop()
@@ -87,14 +141,17 @@ class MicRecorder:
 
     # ---- internals -------------------------------------------------
     def _callback(self, indata, frames, time_info, status):
-        self._q.put(indata[:, 0].copy())
+        block = indata.mean(axis=1) if indata.shape[1] > 1 else indata[:, 0]
+        if self.gain != 1.0:
+            block = np.clip(block * self.gain, -1.0, 1.0)
+        self._q.put(np.array(block, dtype=np.float32))
 
-    def _worker(self):
+    def _worker(self, q):
         while True:
             try:
-                item = self._q.get(timeout=0.25)
+                item = q.get(timeout=0.25)
             except queue.Empty:
-                if not self.running:
+                if not self.running or q is not self._q:
                     return
                 continue
             if item is None:
