@@ -24,6 +24,9 @@ class Song:
     chords: list        # one chord per bar, stored as stacked notes
     bass: list
     genre: str          # "pop" or "lo-fi"
+    duration_beats: Optional[float] = None
+    bass_style: str = "auto"
+    drum_style: str = "auto"
 
 
 @dataclass

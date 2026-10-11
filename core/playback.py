@@ -9,7 +9,7 @@ import wave
 
 import numpy as np
 
-from .patterns import DRUMS, TRACK_GAINS, TRACKS
+from .patterns import DRUMS, DRUM_GROOVES, TRACK_GAINS, TRACKS
 
 SR = 44100
 
@@ -79,7 +79,8 @@ def _drum_samples(rng, sr=SR):
 def render_tracks(song, sr=SR):
     """Render each track into its own loop-length mono buffer."""
     beat_s = 60.0 / song.bpm
-    n = int(round(song.bars * 4 * beat_s * sr))
+    duration_beats = song.duration_beats if song.duration_beats is not None else song.bars * 4
+    n = int(round(duration_beats * beat_s * sr))
     pos = lambda beats: int(round(beats * beat_s * sr))
     voices = VOICES[song.genre]
     tracks = {name: np.zeros(n, dtype=np.float32) for name in TRACKS}
@@ -95,12 +96,22 @@ def render_tracks(song, sr=SR):
 
     rng = np.random.default_rng(7)             # fixed seed -> deterministic loop
     samples = _drum_samples(rng, sr)
-    pattern = DRUMS[song.genre]
+    pattern = DRUM_GROOVES.get(song.drum_style, DRUMS[song.genre])
     for bar in range(song.bars):
         for inst, grid in pattern.items():
             for i, vel in enumerate(grid):
-                if vel:
-                    _add(tracks["drums"], pos(bar * 4 + i / 4.0), samples[inst] * vel)
+                beat = bar * 4 + i / 4.0
+                if not vel or beat >= duration_beats:
+                    continue
+                amp = vel
+                if inst == "kick":
+                    amp *= 1.0 + 0.25 * (bar % 2 == 0)
+                elif inst == "snare":
+                    amp *= 1.0 + 0.35 * ((bar + i) % 8 == 4)
+                elif inst == "hat":
+                    amp *= 1.0 + 0.2 * ((bar + i) % 2 == 1)
+                if amp > 0:
+                    _add(tracks["drums"], pos(beat), samples[inst] * amp)
     return tracks
 
 
@@ -120,7 +131,7 @@ def preview_tone(midi, genre="pop", sr=SR, dur=0.35):
     return (_tone(_mtof(midi), dur, sr=sr, **voice) * 1.6 * TRACK_GAINS["melody"]).astype(np.float32)
 
 
-def click_buffer(bpm, beats=4, sr=SR):
+def click_buffer(bpm, beats=3, sr=SR):
     beat_n = int(round(60.0 / bpm * sr))
     buf = np.zeros(beat_n * beats, dtype=np.float32)
     t = np.arange(int(0.04 * sr)) / sr

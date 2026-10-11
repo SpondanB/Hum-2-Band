@@ -49,9 +49,9 @@ def _snap(x, grid):
 
 
 def frames_to_notes(frames, bpm, bars=4, hop_s=512 / 44100,
-                    min_dur_s=0.1, grid=0.5):
+                    min_dur_s=0.1, grid=0.5, duration_beats=None):
     """Merge pitch frames into notes snapped to an 8th-note grid (grid=0.5 beat)."""
-    total_beats = bars * 4
+    total_beats = float(duration_beats) if duration_beats is not None else bars * 4
     beat_s = 60.0 / bpm
 
     midis = [f.midi for f in frames]
@@ -79,8 +79,11 @@ def frames_to_notes(frames, bpm, bars=4, hop_s=512 / 44100,
         midi = int(round(statistics.median(g["vals"])))
         s = _snap(g["first"] / beat_s, grid)
         e = _snap((g["last"] + hop_s) / beat_s, grid)
-        s = min(max(s, 0.0), total_beats - grid)
-        e = min(max(e, s + grid), total_beats)
+        if total_beats <= grid:
+            s, e = 0.0, total_beats
+        else:
+            s = min(max(s, 0.0), total_beats - grid)
+            e = min(max(e, s + grid), total_beats)
         notes.append(Note(midi, s, e - s))
 
     # Keep the melody monophonic: trim overlaps, resolve identical starts.

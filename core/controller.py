@@ -12,6 +12,7 @@ from .audio_in import (MicError, MicRecorder, level_from_rms, list_devices,
                        refresh_portaudio)
 from .generator import chord_labels, generate
 from .models import Note
+from .patterns import BASS_STYLES, DRUM_STYLES
 from .pitch import HOP
 from .playback import (AudioEngine, click_buffer, mix, preview_tone, render_tracks,
                        write_wav)
@@ -29,6 +30,8 @@ class Controller:
         self.bars = bars
         self.bpm = 100
         self.genre = "pop"
+        self.bass_style = "auto"
+        self.drum_style = "auto"
         self.key_override = None          # (root, mode) or None
         self.detected_key = None
         self.raw_notes = []               # unquantized-to-key notes, in beats
@@ -40,6 +43,8 @@ class Controller:
         self.recorder = MicRecorder(on_frame=self._on_frame,
                                     on_capture_done=self._on_capture_done)
         self._rec_bpm = self.bpm
+        self.max_record_seconds = 45.0
+        self.duration_beats = self.bars * 4.0
         self._build_lock = threading.Lock()
         self._audio_ok = False
         self.input_device = None          # None = system default
@@ -116,6 +121,9 @@ class Controller:
     def set_input_gain(self, gain):
         self.recorder.gain = float(gain)
 
+    def set_max_record_seconds(self, seconds):
+        self.max_record_seconds = max(5.0, min(45.0, float(seconds)))
+
     def shutdown(self):
         self.recorder.stop()
         self.engine.stop_stream()
@@ -126,7 +134,7 @@ class Controller:
 
     # -------------------------------------------------------- recording
     def record(self):
-        """Count-in (4 beats) then record exactly `bars` bars. Also used as Retry."""
+        """Count-in (3 beats) then capture until silence or the 45s UI cap. Also used as Retry."""
         if self.state in BUSY_STATES:
             return
         if not self.recorder.running and not self._open_mic():
@@ -134,12 +142,19 @@ class Controller:
         self.engine.stop()
         self._rec_bpm = self.bpm
         self._set_state("counting", bpm=self._rec_bpm)
-        self.engine.play_oneshot(click_buffer(self._rec_bpm, sr=self.engine.sr), self._count_in_done)
+        self.engine.play_oneshot(click_buffer(self._rec_bpm, beats=3, sr=self.engine.sr),
+                                 self._count_in_done)
 
     def _count_in_done(self):                       # audio thread: keep it light
-        duration = self.bars * 4 * 60.0 / self._rec_bpm
+        duration = float(self.max_record_seconds)
         self._set_state("recording", duration=duration, bpm=self._rec_bpm)
-        self.recorder.begin_capture(duration)
+        self.recorder.begin_capture(duration, silence_timeout=1.2)
+
+    def stop_recording(self):
+        if self.state != "recording":
+            return False
+        self.recorder.stop_capture()
+        return True
 
     def _on_capture_done(self, frames):             # recorder worker thread
         self._set_state("processing")
@@ -147,8 +162,14 @@ class Controller:
 
     def _finish_recording(self, frames):
         try:
-            notes = frames_to_notes(frames, self._rec_bpm, self.bars, hop_s=HOP / self.recorder.sr)
-            self.process_notes(notes)
+            hop_s = HOP / self.recorder.sr
+            active_frames = [frame for frame in frames if frame.rms >= self.recorder.gate]
+            duration_seconds = max((frame.t + hop_s for frame in active_frames), default=0.0)
+            duration_beats = duration_seconds * self._rec_bpm / 60.0
+            bars = max(1, int((duration_beats + 4.0 - 1e-9) // 4.0))
+            notes = frames_to_notes(frames, self._rec_bpm, bars, hop_s=hop_s,
+                                    duration_beats=duration_beats)
+            self.process_notes(notes, duration_beats=duration_beats)
         except Exception as e:
             self._set_state("error", message=f"Something went wrong: {e}")
 
@@ -157,7 +178,7 @@ class Controller:
         self._on_live(name, level_from_rms(frame.rms))
 
     # ------------------------------------------------------ processing
-    def process_notes(self, notes, autoplay=True):
+    def process_notes(self, notes, autoplay=True, duration_beats=None):
         """Notes (in beats) -> key -> band. Returns False if nothing usable."""
         key = detect_key(notes)
         if key is None:
@@ -166,6 +187,8 @@ class Controller:
             return False
         self._push_undo()                          # re-recording is undoable
         self._redo.clear()
+        self.duration_beats = float(duration_beats if duration_beats is not None
+                        else self.bars * 4.0)
         self.raw_notes, self.detected_key = list(notes), key
         self.snap_to_scale = True                  # fresh hum/demo: recognition snaps to the key
         self.edit_rev += 1
@@ -188,7 +211,10 @@ class Controller:
                 melody = quantize(self.raw_notes, root, mode)
             else:
                 melody = [Note(n.midi, n.start, n.duration) for n in self.raw_notes]
-            song = generate(melody, root, mode, self.bpm, self.genre, self.bars)
+            bars = max(1, int((self.duration_beats + 4.0 - 1e-9) // 4.0))
+            song = generate(melody, root, mode, self.bpm, self.genre, bars,
+                            duration_beats=self.duration_beats,
+                            bass_style=self.bass_style, drum_style=self.drum_style)
             tracks = render_tracks(song, sr=self.engine.sr)
             self.song, self.tracks, self.built_rev = song, tracks, rev
             self.engine.set_loop(mix(tracks, song.genre, self.muted))
@@ -202,6 +228,16 @@ class Controller:
     def set_genre(self, genre):
         self.genre = genre
         self._rebuild_async()
+
+    def set_bass_style(self, style):
+        if style in BASS_STYLES:
+            self.bass_style = style
+            self._rebuild_async()
+
+    def set_drum_style(self, style):
+        if style in DRUM_STYLES:
+            self.drum_style = style
+            self._rebuild_async()
 
     def set_tempo(self, bpm):
         self.bpm = int(max(60, min(160, bpm)))
@@ -229,7 +265,8 @@ class Controller:
         return bool(self._redo)
 
     def _snapshot(self):
-        return ([Note(n.midi, n.start, n.duration) for n in self.raw_notes], self.detected_key)
+        return ([Note(n.midi, n.start, n.duration) for n in self.raw_notes],
+            self.detected_key, self.duration_beats)
 
     def _push_undo(self):
         if self.detected_key is None:
@@ -238,8 +275,9 @@ class Controller:
         del self._undo[:-HISTORY_LIMIT]
 
     def _restore(self, snap):
-        notes, key = snap
+        notes, key, duration_beats = snap
         self.raw_notes, self.detected_key = [Note(n.midi, n.start, n.duration) for n in notes], key
+        self.duration_beats = duration_beats
         self.edit_rev += 1
         self._rebuild_async()
         return self.edit_rev
@@ -253,11 +291,11 @@ class Controller:
         """
         if self.detected_key is None or self.state in BUSY_STATES:
             return None
-        total = self.bars * 4
+        total = self.duration_beats
         clean = []
         for n in notes:
-            start = min(max(0.0, float(n.start)), total - 0.05)
-            dur = min(float(n.duration), total - start)
+            start = min(max(0.0, float(n.start)), max(0.0, total - 0.05))
+            dur = min(float(n.duration), max(0.0, total - start))
             if dur > 0:
                 clean.append(Note(int(max(0, min(127, n.midi))), start, dur))
         self._push_undo()

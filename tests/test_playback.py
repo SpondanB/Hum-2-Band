@@ -37,6 +37,23 @@ def test_genres_sound_different():
                               mix(render_tracks(song(genre="lo-fi")), "lo-fi"))
 
 
+def test_rendered_loop_uses_exact_hum_duration():
+    phrase = generate(MELODY, 0, "major", 120, "pop", bars=2, duration_beats=6.5)
+    tracks = render_tracks(phrase)
+    expected_samples = round(6.5 * 60 / phrase.bpm * SR)
+
+    assert phrase.duration_beats == 6.5
+    assert all(len(track) == expected_samples for track in tracks.values())
+
+
+def test_drum_groove_choices_render_distinct_patterns():
+    rock = generate(MELODY, 0, "major", 100, "pop", drum_style="straight_rock")
+    four_floor = generate(MELODY, 0, "major", 100, "pop", drum_style="four_on_floor")
+
+    assert rock.drum_style == "straight_rock"
+    assert four_floor.drum_style == "four_on_floor"
+    assert not np.array_equal(render_tracks(rock)["drums"], render_tracks(four_floor)["drums"])
+
 def _pull(engine, frames):
     out = np.zeros((frames, 1), dtype=np.float32)
     engine._callback(out, frames, None, None)

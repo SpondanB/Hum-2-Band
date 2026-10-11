@@ -9,6 +9,22 @@ SCALES = {
 
 GENRES = ("pop", "lo-fi")
 GENRE_LABELS = {"Pop": "pop", "Lo-fi": "lo-fi"}
+BASS_STYLE_OPTIONS = {
+    "Bass: Auto": "auto",
+    "Bass: Root pulse": "root_pulse",
+    "Bass: Root + fifth": "root_fifth",
+    "Bass: Walking": "walking",
+    "Bass: Syncopated": "syncopated",
+}
+DRUM_STYLE_OPTIONS = {
+    "Drums: Auto": "auto",
+    "Drums: Straight rock": "straight_rock",
+    "Drums: Four-on-floor": "four_on_floor",
+    "Drums: Half-time": "half_time",
+    "Drums: Breakbeat": "breakbeat",
+}
+BASS_STYLES = tuple(BASS_STYLE_OPTIONS.values())
+DRUM_STYLES = tuple(DRUM_STYLE_OPTIONS.values())
 
 # Preferred scale-degree progression (0-based degrees: 0=I, 3=IV, 4=V, 5=vi)
 PREFERRED_PROGRESSION = {
@@ -28,6 +44,33 @@ DRUMS = {
         "snare": [0, 0, 0, 0,  0.9, 0, 0, 0,  0, 0, 0, 0,  0.9, 0, 0, 0],
         "hat":   [0.6, 0, 0.3, 0.3,  0.6, 0, 0.3, 0,
                   0.6, 0, 0.3, 0.3,  0.6, 0, 0.3, 0.4],
+    },
+}
+
+DRUM_GROOVES = {
+    "straight_rock": {
+        "kick":  [1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0.35, 0,  0, 0, 0, 0],
+        "snare": [0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0.2, 0],
+        "hat":   [0.65, 0, 0.4, 0,  0.65, 0, 0.4, 0,
+                  0.65, 0, 0.4, 0,  0.65, 0, 0.4, 0],
+    },
+    "four_on_floor": {
+        "kick":  [1, 0, 0, 0,  0.85, 0, 0, 0,  1, 0, 0, 0,  0.85, 0, 0, 0],
+        "snare": [0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0],
+        "hat":   [0.6, 0, 0.4, 0,  0.6, 0, 0.4, 0,
+                  0.6, 0, 0.4, 0,  0.6, 0, 0.4, 0],
+    },
+    "half_time": {
+        "kick":  [1, 0, 0, 0,  0, 0, 0.25, 0,  0.8, 0, 0, 0,  0, 0, 0, 0],
+        "snare": [0, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0],
+        "hat":   [0.6, 0, 0, 0,  0.4, 0, 0, 0,
+                  0.6, 0, 0, 0,  0.4, 0, 0, 0],
+    },
+    "breakbeat": {
+        "kick":  [1, 0, 0, 0,  0, 0, 0.7, 0,  0.8, 0, 0, 0.45,  0, 0, 0, 0],
+        "snare": [0, 0, 0, 0,  1, 0, 0, 0.25,  0, 0, 0.2, 0,  1, 0, 0, 0.4],
+        "hat":   [0.45, 0.25, 0.35, 0.25,  0.5, 0.25, 0.35, 0.25,
+                  0.45, 0.25, 0.35, 0.25,  0.5, 0.25, 0.35, 0.25],
     },
 }
 

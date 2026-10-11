@@ -33,6 +33,18 @@ def test_silence_yields_no_voiced_frames():
     assert frames_to_notes(done[0], 120) == []
 
 
+def test_pitch_dropout_does_not_end_audible_capture():
+    done = []
+    rec = MicRecorder(on_capture_done=done.append)
+    rec.detector.detect = lambda window, hop: (0.0, 0.0)
+    rec._capturing, rec._t0, rec._duration, rec._frames = True, 0.0, 45.0, []
+    rec.feed(np.concatenate([tone(220, 10.0), np.zeros(int(1.5 * SR), np.float32)]))
+
+    assert len(done) == 1
+    active = [frame for frame in done[0] if frame.rms >= rec.gate]
+    assert active and active[-1].t >= 9.9
+
+
 def test_level_meter_range():
     assert level_from_rms(0) == 0.0 and level_from_rms(1.0) == 1.0
     assert 0 < level_from_rms(0.01) < 1

@@ -208,6 +208,18 @@
             height: dp(48)
             spacing: dp(10)
             DarkSpinner:
+                text: root.bass_style_text
+                values: root.bass_style_choices
+                on_text: root.on_bass_style(self.text)
+            DarkSpinner:
+                text: root.drum_style_text
+                values: root.drum_style_choices
+                on_text: root.on_drum_style(self.text)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(10)
+            DarkSpinner:
                 id: in_dev
                 text: root.default_in
                 values: root.input_names
@@ -231,11 +243,27 @@
                 size_hint_x: None
                 width: dp(80)
             Slider:
-                min: 0.5
-                max: 8
-                value: 1
+                min: 0.25
+                max: 12
+                value: 2
                 size_hint_x: 0.6
                 on_value: root.on_gain(self.value)
+            Label:
+                text: 'Hum max'
+                size_hint_x: None
+                width: dp(70)
+            Slider:
+                min: 5
+                max: 45
+                step: 1
+                value: 45
+                size_hint_x: 0.7
+                on_value: root.set_record_limit(self.value)
+            Label:
+                text: root.record_limit_text
+                size_hint_x: None
+                width: dp(40)
+                font_size: '15sp'
         BoxLayout:
             size_hint_y: None
             height: dp(48)

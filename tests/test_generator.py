@@ -48,3 +48,34 @@ def test_voicing_is_ascending_stack():
 def test_minor_key_chords():
     ch = diatonic_chords(9, "minor")                             # A minor
     assert ch[0] == [9, 0, 4] and ch[5] == [5, 9, 0]             # Am, F
+
+
+def test_generate_longer_phrase_has_more_real_world_variation():
+    melody = [Note(60 + (i % 7), i * 4, 2) for i in range(8)]
+    song = generate(melody, 0, "major", 100, "pop", bars=8)
+    labels = chord_labels(song)
+    assert song.bars == 8
+    assert len(labels) == 8
+    assert len(set(labels)) >= 5
+    assert len(song.bass) > song.bars
+    assert len(song.chords) >= song.bars * 3
+
+
+def test_lofi_drums_are_more_varied_across_bars():
+    melody = [Note(60 + (i % 5), i * 4, 2) for i in range(8)]
+    song = generate(melody, 0, "major", 100, "lo-fi", bars=8)
+    assert song.genre == "lo-fi"
+    assert song.bars == 8
+    assert any(n.start != 0 for n in song.bass)
+
+
+def test_bass_groove_choices_generate_distinct_lines():
+    pulse = generate([], 0, "major", 100, "pop", bars=4, bass_style="root_pulse")
+    walking = generate([], 0, "major", 100, "pop", bars=4, bass_style="walking")
+
+    assert pulse.bass_style == "root_pulse"
+    assert walking.bass_style == "walking"
+    assert len(pulse.bass) == 8
+    assert len(walking.bass) == 16
+    assert [(n.midi, n.start, n.duration) for n in pulse.bass] != [
+        (n.midi, n.start, n.duration) for n in walking.bass]

@@ -58,8 +58,9 @@ class NoteStrip(Widget):
             self._deferred = (song, fit)
             return
         s.set_scale(song.key_root, song.mode)
-        s.geo.total_beats = song.bars * 4
-        self.total_beats = song.bars * 4
+        total_beats = song.duration_beats if song.duration_beats is not None else song.bars * 4
+        s.geo.total_beats = total_beats
+        self.total_beats = total_beats
         s.load(song.melody, keep_selection=not fit)
         if fit:
             s.geo.fit(s.notes)
@@ -143,9 +144,9 @@ class NoteStrip(Widget):
         self._sync_geo()
         if getattr(touch, "is_mouse_scrolling", False):         # wheel pans the pitch range
             if touch.button == "scrollup":
-                self.session.geo.pan(2)
+                self.session.geo.pan(-2)      # natural UI feel: wheel up moves pitch up
             elif touch.button == "scrolldown":
-                self.session.geo.pan(-2)
+                self.session.geo.pan(2)
             self._redraw()
             return True
         if not self.editable:

@@ -10,7 +10,8 @@ from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
 from kivy.uix.floatlayout import FloatLayout
 
 from core.controller import Controller
-from core.patterns import GENRE_LABELS, NOTE_NAMES
+from core.patterns import (BASS_STYLE_OPTIONS, DRUM_STYLE_OPTIONS, GENRE_LABELS,
+                           NOTE_NAMES)
 from ui.note_strip import NoteStrip  # noqa: F401  (needed by hum.kv)
 
 GRID_CHOICES = {"Grid: 1/4": 1.0, "Grid: 1/8": 0.5, "Grid: 1/16": 0.25}
@@ -38,6 +39,12 @@ class MainScreen(FloatLayout):
     live_note = StringProperty("--")
     level = NumericProperty(0)
     progress = NumericProperty(0)
+    record_limit = NumericProperty(45.0)
+    record_limit_text = StringProperty("45s")
+    bass_style_choices = ListProperty(list(BASS_STYLE_OPTIONS))
+    drum_style_choices = ListProperty(list(DRUM_STYLE_OPTIONS))
+    bass_style_text = StringProperty("Bass: Auto")
+    drum_style_text = StringProperty("Drums: Auto")
     big_text = StringProperty("")
     record_text = StringProperty("Record")
     play_text = StringProperty("Play")
@@ -63,6 +70,7 @@ class MainScreen(FloatLayout):
         self.controller = Controller(on_state=_ui(self._on_state),
                                      on_live=_ui(self._on_live),
                                      on_result=_ui(self._on_result))
+        self.controller.set_max_record_seconds(self.record_limit)
         self._in_map, self._out_map = {}, {}
         self._saving = False
         self._local_rev = 0          # newest melody revision the user created on screen
@@ -120,6 +128,14 @@ class MainScreen(FloatLayout):
         if self.controller:
             self.controller.set_input_gain(value)
 
+    def set_record_limit(self, value):
+        self.record_limit = float(value)
+
+    def on_record_limit(self, instance, value):
+        self.record_limit_text = f"{int(round(value))}s"
+        if self.controller:
+            self.controller.set_max_record_seconds(value)
+
     # ----------------------------------------------------- controller events
     def _on_live(self, note, level):
         self.live_note = note
@@ -146,11 +162,12 @@ class MainScreen(FloatLayout):
         self.big_text = ""
         self.is_recording = False
         busy = state in ("counting", "recording", "processing")
-        self.can_record = not busy
+        self.can_record = not busy or state == "recording"
         self.can_play = (not busy) and self.controller.song is not None
         self._sync_edit_state()
-        self.record_text = "Retry" if state == "error" else (
-            "Re-record" if self.controller.song else "Record")
+        self.record_text = ("Stop" if state == "recording" else
+                            "Retry" if state == "error" else
+                            "Re-record" if self.controller.song else "Record")
         self.play_text = "Stop" if state == "playing" else "Play"
         if state != "recording":
             self.progress = 0
@@ -184,7 +201,7 @@ class MainScreen(FloatLayout):
 
     def _count_tick(self, dt):
         self._beat += 1
-        if self._beat > 4:
+        if self._beat > 3:
             return False
         self.big_text = str(self._beat)
 
@@ -280,7 +297,10 @@ class MainScreen(FloatLayout):
 
     # ------------------------------------------------------- user actions
     def on_record(self):
-        self.controller.record()
+        if self.state == "recording":
+            self.controller.stop_recording()
+        else:
+            self.controller.record()
 
     def on_demo(self):
         self.controller.load_demo()
@@ -294,6 +314,14 @@ class MainScreen(FloatLayout):
     def on_genre(self, text):
         if self.controller:
             self.controller.set_genre(GENRE_LABELS.get(text, "pop"))
+
+    def on_bass_style(self, text):
+        if self.controller:
+            self.controller.set_bass_style(BASS_STYLE_OPTIONS.get(text, "auto"))
+
+    def on_drum_style(self, text):
+        if self.controller:
+            self.controller.set_drum_style(DRUM_STYLE_OPTIONS.get(text, "auto"))
 
     def on_tempo(self, value):
         if not self.controller:

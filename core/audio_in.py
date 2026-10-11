@@ -14,8 +14,8 @@ from .analysis import freq_to_midi
 from .models import PitchFrame
 from .pitch import HOP, SR, WIN, make_detector
 
-NOISE_GATE_RMS = 0.01      # ~ -40 dBFS
-CONF_THRESHOLD = 0.80
+NOISE_GATE_RMS = 0.003     # ~ -50 dBFS: more sensitive to quiet humming
+CONF_THRESHOLD = 0.65
 
 
 class MicError(Exception):
@@ -63,7 +63,7 @@ class MicRecorder:
         self.on_capture_done = on_capture_done
         self.gate = NOISE_GATE_RMS
         self.conf_threshold = CONF_THRESHOLD
-        self.gain = 1.0                    # software input gain
+        self.gain = 2.0                    # software input gain; default is slightly louder
         self.detector = make_detector(True, sr)
         self.running = False
         self.device_name = ""
@@ -79,6 +79,8 @@ class MicRecorder:
         self._capturing = False
         self._t0 = 0.0
         self._duration = 0.0
+        self._silence_timeout = 1.2
+        self._last_activity_t = None
         self._frames = []
 
     # ---- lifecycle -------------------------------------------------
@@ -133,11 +135,14 @@ class MicRecorder:
             self._stream = None
 
     # ---- capture control (thread-safe: goes through the same queue) ----
-    def begin_capture(self, duration_s):
-        self._q.put(("begin", float(duration_s)))
+    def begin_capture(self, duration_s, silence_timeout=1.2):
+        self._q.put(("begin", float(duration_s), float(silence_timeout)))
 
     def cancel_capture(self):
         self._q.put(("cancel", 0.0))
+
+    def stop_capture(self):
+        self._q.put(("stop",))
 
     # ---- internals -------------------------------------------------
     def _callback(self, indata, frames, time_info, status):
@@ -157,12 +162,17 @@ class MicRecorder:
             if item is None:
                 return
             if isinstance(item, tuple):
-                cmd, val = item
+                cmd = item[0]
                 if cmd == "begin":
                     self._capturing, self._frames = True, []
-                    self._t0, self._duration = self._total / self.sr, val
+                    self._t0, self._duration = self._total / self.sr, float(item[1])
+                    self._silence_timeout = float(item[2]) if len(item) > 2 else 1.2
+                    self._last_activity_t = None
+                elif cmd == "stop":
+                    self._finish_capture()
                 else:
                     self._capturing, self._frames = False, []
+                    self._last_activity_t = None
                 continue
             self.feed(item)
 
@@ -189,8 +199,19 @@ class MicRecorder:
             t = t_abs - self._t0
             if t >= 0:
                 self._frames.append(PitchFrame(t, midi, rms, conf))
-            if t >= self._duration:
-                self._capturing = False
-                frames, self._frames = self._frames, []
-                if self.on_capture_done:
-                    self.on_capture_done(frames)
+            if t >= 0 and rms >= self.gate:
+                self._last_activity_t = t_abs
+            if (self._last_activity_t is not None
+                    and t_abs - self._last_activity_t >= self._silence_timeout):
+                self._finish_capture()
+            elif t >= self._duration:
+                self._finish_capture()
+
+    def _finish_capture(self):
+        if not self._capturing:
+            return
+        self._capturing = False
+        frames, self._frames = self._frames, []
+        self._last_activity_t = None
+        if self.on_capture_done:
+            self.on_capture_done(frames)

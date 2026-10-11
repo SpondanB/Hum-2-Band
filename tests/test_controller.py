@@ -61,6 +61,33 @@ def test_missing_mic_reports_error():
     assert states[-1][0] == "error"
 
 
+def test_stop_recording_requests_capture_finish():
+    c = make()
+    stopped = []
+    c.state = "recording"
+    c.recorder.stop_capture = lambda: stopped.append(True)
+
+    assert c.stop_recording() is True
+    assert stopped == [True]
+
+
+def test_capture_duration_comes_from_last_voiced_frame():
+    from core.models import PitchFrame
+
+    c = make()
+    c._rec_bpm = 120
+    step = 512 / c.recorder.sr
+    frames = [PitchFrame(i * step, 60 if i * step < 8.0 else None, 0.1, 1.0)
+              for i in range(round(10.0 / step) + 1)]
+    c._finish_recording(frames)
+
+    expected = (frames[-1].t + step) * 2
+    assert c.song is not None
+    assert abs(c.song.duration_beats - expected) < 1e-9
+    assert len(c.tracks["melody"]) == round(expected * 60 / c.song.bpm * c.engine.sr)
+    assert c.song.duration_beats > 16.0
+
+
 # ------------------------------------------------------------- melody editing
 def _wait_built(c, timeout=5.0):
     t0 = time.perf_counter()

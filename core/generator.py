@@ -18,9 +18,14 @@ def _overlap(n, b0, b1):
 
 
 def choose_chords(melody, root, mode, bars=4):
-    """Return one degree index (0..5) per bar."""
+    """Return one degree index (0..5) per bar with longer-phrase variation."""
     chords = diatonic_chords(root, mode)
     pref = PREFERRED_PROGRESSION[mode]
+    phrase_bank = {
+        "major": [0, 4, 5, 3, 0, 1, 4, 5, 0, 5, 4, 3, 0, 2, 4, 5],
+        "minor": [0, 5, 3, 4, 0, 1, 5, 3, 0, 4, 5, 3, 0, 2, 5, 4],
+    }
+    phrase = phrase_bank[mode]
     choice = []
     for bar in range(bars):
         b0, b1 = bar * 4, bar * 4 + 4
@@ -28,12 +33,17 @@ def choose_chords(melody, root, mode, bars=4):
                   for pcs in chords]
         best = max(scores)
         tied = [d for d, s in enumerate(scores) if abs(s - best) < 1e-9]
+        if not tied:
+            tied = [0]
+        target = phrase[bar % len(phrase)]
         if len(tied) == 1:
             pick = tied[0]
-        elif pref[bar % 4] in tied:
-            pick = pref[bar % 4]          # common progression breaks ties
+        elif target in tied:
+            pick = target
+        elif pref[bar % len(pref)] in tied:
+            pick = pref[bar % len(pref)]
         else:
-            pick = sorted(tied, key=lambda d: (d not in (0, 3, 4), d))[0]  # I, IV, V first
+            pick = sorted(tied, key=lambda d: (d not in (0, 3, 4), d))[0]
         choice.append(pick)
     return choice
 
@@ -48,7 +58,12 @@ def voice_chord(pcs, base=48):
     return notes
 
 
-def generate(melody, root, mode, bpm, genre, bars=4):
+def generate(melody, root, mode, bpm, genre, bars=4, duration_beats=None,
+             bass_style="auto", drum_style="auto"):
+    duration_beats = float(duration_beats if duration_beats is not None else bars * 4)
+    melody = [Note(note.midi, max(0.0, note.start),
+                   min(note.end, duration_beats) - max(0.0, note.start))
+              for note in melody if note.start < duration_beats and note.end > 0]
     chords_pcs = diatonic_chords(root, mode)
     sc = scale_pcs(root, mode)
     degrees = choose_chords(melody, root, mode, bars)
@@ -60,15 +75,55 @@ def generate(melody, root, mode, bpm, genre, bars=4):
             pcs.append(sc[(deg + 6) % 7])   # add the 7th for a jazzier colour
         voiced = voice_chord(pcs)
         start = bar * 4.0
-        chord_notes += [Note(m, start, 4.0) for m in voiced]
-        bass_root = voiced[0] - 12           # one octave below the chord
-        if genre == "lo-fi":
-            bass_notes += [Note(bass_root, start, 1.5), Note(bass_root, start + 2, 1.5)]
+        chord_duration = min(4.0, max(0.0, duration_beats - start))
+        if chord_duration:
+            chord_notes += [Note(m, start, chord_duration) for m in voiced]
+
+        bass_root = voiced[0] - 12
+        if bass_style == "auto" and bars <= 4:
+            if genre == "lo-fi":
+                bass_line = [(0.0, 1.5), (2.0, 1.5)]
+            else:
+                bass_line = [(0.0, 3.5)]
+            bass_events = [(beat, bass_root, length) for beat, length in bass_line]
+        elif bass_style == "auto":
+            if genre == "lo-fi":
+                bass_line = [
+                    (0.0, bass_root),
+                    (1.0, bass_root + 7),
+                    (2.0, bass_root),
+                    (3.0, bass_root + 5),
+                ]
+            else:
+                bass_line = [
+                    (0.0, bass_root),
+                    (1.5, bass_root + 7),
+                    (2.5, bass_root),
+                    (3.5, bass_root + 5),
+                ]
+            bass_events = [(beat, midi, 0.75 if genre == "lo-fi" else 0.5)
+                           for beat, midi in bass_line]
         else:
-            bass_notes.append(Note(bass_root, start, 3.5))
+            third, fifth = voiced[1] - 12, voiced[2] - 12
+            bass_events = {
+                "root_pulse": [(0.0, bass_root, 1.75), (2.0, bass_root, 1.75)],
+                "root_fifth": [(0.0, bass_root, 0.8), (1.5, fifth, 0.45),
+                               (2.0, bass_root, 0.8), (3.5, fifth, 0.45)],
+                "walking": [(0.0, bass_root, 0.8), (1.0, third, 0.8),
+                            (2.0, fifth, 0.8), (3.0, third, 0.8)],
+                "syncopated": [(0.0, bass_root, 0.65), (1.5, fifth, 0.4),
+                               (2.5, bass_root + 12, 0.65), (3.5, fifth, 0.4)],
+            }.get(bass_style, [(0.0, bass_root, 3.5)])
+        for beat, midi, length in bass_events:
+            note_start = start + beat
+            if note_start < duration_beats:
+                bass_notes.append(Note(midi, note_start,
+                                       min(length, duration_beats - note_start)))
 
     return Song(key_root=root, mode=mode, bpm=bpm, bars=bars, melody=list(melody),
-                chords=chord_notes, bass=bass_notes, genre=genre)
+                chords=chord_notes, bass=bass_notes, genre=genre,
+                duration_beats=duration_beats, bass_style=bass_style,
+                drum_style=drum_style)
 
 
 def chord_labels(song):
