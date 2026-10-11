@@ -54,6 +54,54 @@ def test_save_wav_and_mute():
         assert w.getframerate() == 44100 and w.getnframes() > 44100 * 5
 
 
+def test_save_reference_wav_uses_capture_sample_rate():
+    import numpy as np
+
+    c = make()
+    c.reference_audio = np.ones(22050, dtype=np.float32) * 0.25
+    c.reference_sr = 22050
+    path = os.path.join(tempfile.mkdtemp(), "reference.wav")
+
+    assert c.save_reference_wav(path)
+    with wave.open(path) as w:
+        assert w.getframerate() == 22050 and w.getnframes() == 22050
+
+
+def test_play_reference_resamples_to_output_rate():
+    import numpy as np
+
+    c = make()
+    c._audio_ok = True
+    c.engine.sr = 44100
+    c.reference_audio = np.ones(22050, dtype=np.float32) * 0.25
+    c.reference_sr = 22050
+    played = []
+    c.engine.play_oneshot = lambda audio, on_done=None: played.append((audio, on_done))
+
+    assert c.play_reference()
+    assert len(played[0][0]) == 44100
+    assert states[-1][0] == "reference"
+
+
+def test_reference_mix_toggle_overlays_hum_on_full_song_loop():
+    import numpy as np
+
+    c = make()
+    c.load_demo()
+    backing = c._loop_audio()
+    c.reference_audio = np.full(44100, 0.2, dtype=np.float32)
+    c.reference_sr = c.engine.sr
+
+    c.set_reference_mix(True)
+    combined = c.engine._loop.copy()
+    c.set_reference_mix(False)
+
+    assert len(combined) == len(backing)
+    assert not np.array_equal(combined[:44100], backing[:44100])
+    assert np.array_equal(combined[44100:], backing[44100:])
+    assert np.array_equal(c.engine._loop, backing)
+
+
 def test_missing_mic_reports_error():
     c = make()
     c.recorder.start = lambda *a: (_ for _ in ()).throw(__import__("core.audio_in").audio_in.MicError("none"))

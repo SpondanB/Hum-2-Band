@@ -7,6 +7,8 @@ import json
 import os
 import threading
 
+import numpy as np
+
 from .analysis import detect_key, frames_to_notes, midi_to_name, quantize
 from .audio_in import (MicError, MicRecorder, level_from_rms, list_devices,
                        refresh_portaudio)
@@ -45,6 +47,9 @@ class Controller:
         self._rec_bpm = self.bpm
         self.max_record_seconds = 45.0
         self.duration_beats = self.bars * 4.0
+        self.reference_audio = None
+        self.reference_sr = None
+        self.reference_mix_enabled = False
         self._build_lock = threading.Lock()
         self._audio_ok = False
         self.input_device = None          # None = system default
@@ -157,6 +162,8 @@ class Controller:
         return True
 
     def _on_capture_done(self, frames):             # recorder worker thread
+        self.reference_audio = self.recorder.last_capture_audio.copy()
+        self.reference_sr = self.recorder.sr
         self._set_state("processing")
         threading.Thread(target=self._finish_recording, args=(frames,), daemon=True).start()
 
@@ -220,7 +227,7 @@ class Controller:
                             bass_style=self.bass_style, drum_style=self.drum_style)
             tracks = render_tracks(song, sr=self.engine.sr)
             self.song, self.tracks, self.built_rev = song, tracks, rev
-            self.engine.set_loop(mix(tracks, song.genre, self.muted))
+            self.engine.set_loop(self._loop_audio())
         self._on_result(song)
 
     def _rebuild_async(self):
@@ -256,8 +263,32 @@ class Controller:
     def set_track_enabled(self, name, enabled):
         (self.muted.discard if enabled else self.muted.add)(name)
         if self.tracks and self.song:
-            self.engine.set_loop(mix(self.tracks, self.song.genre, self.muted),
-                                 mode="same_pos")
+            self.engine.set_loop(self._loop_audio(), mode="same_pos")
+
+    def _loop_audio(self):
+        if self.tracks is None or self.song is None:
+            return None
+        backing = mix(self.tracks, self.song.genre, self.muted)
+        if not self.reference_mix_enabled or self.reference_audio is None:
+            return backing
+        if not len(self.reference_audio) or not self.reference_sr:
+            return backing
+
+        reference = self.reference_audio
+        if self.reference_sr != self.engine.sr:
+            output_size = int(round(len(reference) * self.engine.sr / self.reference_sr))
+            source_positions = np.arange(len(reference))
+            target_positions = np.arange(output_size) * self.reference_sr / self.engine.sr
+            reference = np.interp(target_positions, source_positions, reference).astype(np.float32)
+        combined = backing.copy()
+        count = min(len(combined), len(reference))
+        combined[:count] = np.clip(combined[:count] + reference[:count] * 0.6, -1.0, 1.0)
+        return combined
+
+    def set_reference_mix(self, enabled):
+        self.reference_mix_enabled = bool(enabled)
+        if self.tracks is not None and self.song is not None:
+            self.engine.set_loop(self._loop_audio(), mode="same_pos")
 
     # ------------------------------------------------------ melody editing
     @property
@@ -368,7 +399,26 @@ class Controller:
     def save_wav(self, path):
         if self.tracks is None or self.song is None:
             return False
-        write_wav(path, mix(self.tracks, self.song.genre, self.muted), sr=self.engine.sr)
+        write_wav(path, self._loop_audio(), sr=self.engine.sr)
+        return True
+
+    def play_reference(self):
+        if not self._audio_ok or self.reference_audio is None or not len(self.reference_audio):
+            return False
+        audio = self.reference_audio
+        if self.reference_sr != self.engine.sr:
+            output_size = int(round(len(audio) * self.engine.sr / self.reference_sr))
+            source_positions = np.arange(len(audio))
+            target_positions = np.arange(output_size) * self.reference_sr / self.engine.sr
+            audio = np.interp(target_positions, source_positions, audio).astype(np.float32)
+        self.engine.play_oneshot(audio, lambda: self._set_state("ready" if self.song else "idle"))
+        self._set_state("reference")
+        return True
+
+    def save_reference_wav(self, path):
+        if self.reference_audio is None or not len(self.reference_audio):
+            return False
+        write_wav(path, self.reference_audio, sr=self.reference_sr)
         return True
 
     def key_text(self):

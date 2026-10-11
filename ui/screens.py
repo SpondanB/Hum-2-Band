@@ -50,6 +50,8 @@ class MainScreen(FloatLayout):
     play_text = StringProperty("Play")
     can_record = BooleanProperty(True)
     can_play = BooleanProperty(False)
+    can_reference = BooleanProperty(False)
+    reference_with_band = BooleanProperty(False)
     is_recording = BooleanProperty(False)
     key_choices = ListProperty(KEY_CHOICES)
     default_in = StringProperty("Mic: system default")
@@ -164,6 +166,8 @@ class MainScreen(FloatLayout):
         busy = state in ("counting", "recording", "processing")
         self.can_record = not busy or state == "recording"
         self.can_play = (not busy) and self.controller.song is not None
+        self.can_reference = bool(not busy and self.controller.reference_audio is not None
+                      and len(self.controller.reference_audio))
         self._sync_edit_state()
         self.record_text = ("Stop" if state == "recording" else
                             "Retry" if state == "error" else
@@ -188,6 +192,8 @@ class MainScreen(FloatLayout):
             self.status_text = "Building your band..."
         elif state in ("ready", "playing"):
             self.status_text = "Playing" if state == "playing" else "Ready"
+        elif state == "reference":
+            self.status_text = "Playing hummed reference"
         elif state == "error":
             self.status_text = info.get("message", "Something went wrong")
 
@@ -344,7 +350,7 @@ class MainScreen(FloatLayout):
         if self.controller:
             self.controller.set_track_enabled(name, enabled)
 
-    def _ask_save_path(self):
+    def _ask_save_path(self, initialfile="hum_to_band.wav", title="Save Audio As"):
         try:
             try:
                 import pythoncom
@@ -362,10 +368,10 @@ class MainScreen(FloatLayout):
             path = filedialog.asksaveasfilename(
                 parent=root,
                 initialdir=os.path.expanduser("~"),
-                initialfile="hum_to_band.wav",
+                initialfile=initialfile,
                 defaultextension=".wav",
                 filetypes=[("WAV Audio (*.wav)", "*.wav"), ("All Files (*.*)", "*.*")],
-                title="Save Audio As",
+                title=title,
             )
             root.destroy()
             return path if path else None
@@ -381,6 +387,30 @@ class MainScreen(FloatLayout):
             try:
                 path = self._ask_save_path()
                 if path and self.controller.save_wav(path):
+                    Clock.schedule_once(lambda dt: setattr(self, "status_text", f"Saved {path}"), 0)
+            finally:
+                self._saving = False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_play_reference(self):
+        if self.controller and not self.controller.play_reference():
+            self.status_text = "No hummed reference audio available"
+
+    def on_reference_mix(self, enabled):
+        self.reference_with_band = bool(enabled)
+        if self.controller:
+            self.controller.set_reference_mix(enabled)
+
+    def on_save_reference(self):
+        if getattr(self, "_saving", False) or not self.controller or not self.can_reference:
+            return
+        self._saving = True
+
+        def work():
+            try:
+                path = self._ask_save_path("hummed_reference.wav", "Save Hummed Reference")
+                if path and self.controller.save_reference_wav(path):
                     Clock.schedule_once(lambda dt: setattr(self, "status_text", f"Saved {path}"), 0)
             finally:
                 self._saving = False

@@ -82,6 +82,11 @@ class MicRecorder:
         self._silence_timeout = 1.2
         self._last_activity_t = None
         self._frames = []
+        self.last_capture_audio = np.zeros(0, dtype=np.float32)
+        self._capture_audio = []
+        self._capture_samples = 0
+        self._capture_limit_samples = 0
+        self._capture_start_sample = 0
 
     # ---- lifecycle -------------------------------------------------
     def start(self, device=None):
@@ -168,6 +173,10 @@ class MicRecorder:
                     self._t0, self._duration = self._total / self.sr, float(item[1])
                     self._silence_timeout = float(item[2]) if len(item) > 2 else 1.2
                     self._last_activity_t = None
+                    self._capture_audio = []
+                    self._capture_samples = 0
+                    self._capture_limit_samples = int(round(self._duration * self.sr))
+                    self._capture_start_sample = self._total
                 elif cmd == "stop":
                     self._finish_capture()
                 else:
@@ -185,6 +194,7 @@ class MicRecorder:
 
     def _process_hop(self, chunk):
         self._win = np.concatenate((self._win[HOP:], chunk))
+        chunk_start = self._total
         self._total += HOP
         rms = float(np.sqrt(np.mean(self._win[-1024:] ** 2)))
         midi, conf = None, 0.0
@@ -196,6 +206,12 @@ class MicRecorder:
         if self.on_frame:
             self.on_frame(PitchFrame(t_abs, midi, rms, conf))
         if self._capturing:
+            sample_offset = max(0, self._capture_start_sample - chunk_start)
+            remaining = self._capture_limit_samples - self._capture_samples
+            if remaining > 0 and sample_offset < len(chunk):
+                captured = chunk[sample_offset:sample_offset + remaining].copy()
+                self._capture_audio.append(captured)
+                self._capture_samples += len(captured)
             t = t_abs - self._t0
             if t >= 0:
                 self._frames.append(PitchFrame(t, midi, rms, conf))
@@ -212,6 +228,15 @@ class MicRecorder:
             return
         self._capturing = False
         frames, self._frames = self._frames, []
+        if self._capture_audio:
+            audio = np.concatenate(self._capture_audio)
+            active = np.flatnonzero(np.abs(audio) >= self.gate)
+            if active.size:
+                audio = audio[:active[-1] + 1]
+            self.last_capture_audio = audio.astype(np.float32, copy=False)
+        else:
+            self.last_capture_audio = np.zeros(0, dtype=np.float32)
+        self._capture_audio = []
         self._last_activity_t = None
         if self.on_capture_done:
             self.on_capture_done(frames)

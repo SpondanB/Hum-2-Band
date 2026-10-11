@@ -45,6 +45,22 @@ def test_pitch_dropout_does_not_end_audible_capture():
     assert active and active[-1].t >= 9.9
 
 
+def test_capture_retains_reference_audio_up_to_duration_limit():
+    done = []
+    rec = MicRecorder(on_capture_done=done.append)
+    rec._capturing, rec._t0, rec._duration, rec._frames = True, 0.0, 0.5, []
+    rec._capture_start_sample = 0
+    rec._capture_limit_samples = round(0.5 * SR)
+    rec._capture_samples = 0
+    rec._capture_audio = []
+
+    rec.feed(tone(220, 0.7))
+
+    assert len(done) == 1
+    assert len(rec.last_capture_audio) == round(0.5 * SR)
+    assert np.max(np.abs(rec.last_capture_audio)) > 0.1
+
+
 def test_level_meter_range():
     assert level_from_rms(0) == 0.0 and level_from_rms(1.0) == 1.0
     assert 0 < level_from_rms(0.01) < 1

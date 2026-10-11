@@ -284,6 +284,29 @@
                 text: 'Drums'
                 state: 'down'
                 on_state: root.on_track('drums', self.state == 'down')
+        BoxLayout:
+            size_hint_y: None
+            height: dp(44)
+            spacing: dp(10)
+            AccentButton:
+                text: 'Play Hum Reference'
+                disabled: not root.can_reference
+                font_size: '16sp'
+                height: dp(44)
+                on_release: root.on_play_reference()
+            AccentButton:
+                text: 'Save Hum Reference'
+                disabled: not root.can_reference
+                font_size: '16sp'
+                height: dp(44)
+                on_release: root.on_save_reference()
+            TrackToggle:
+                text: 'Hum + Band'
+                state: 'down' if root.reference_with_band else 'normal'
+                disabled: not root.can_reference
+                font_size: '15sp'
+                height: dp(44)
+                on_state: root.on_reference_mix(self.state == 'down')
     Label:
         text: root.big_text
         font_size: '180sp'
