@@ -64,3 +64,17 @@ def test_capture_retains_reference_audio_up_to_duration_limit():
 def test_level_meter_range():
     assert level_from_rms(0) == 0.0 and level_from_rms(1.0) == 1.0
     assert 0 < level_from_rms(0.01) < 1
+
+
+def test_capture_ends_when_nobody_hums():
+    """Pure silence must not hold the user hostage until the 45 s cap."""
+    done = []
+    rec = MicRecorder(on_capture_done=done.append)
+    rec._capturing, rec._t0, rec._duration, rec._frames = True, 0.0, 45.0, []
+    rec._capture_limit_samples, rec._capture_audio = int(45 * rec.sr), []
+    rec._capture_samples = rec._capture_start_sample = 0
+    rec._leading_timeout = 8.0
+    rec.feed(np.zeros(int(7 * SR), np.float32))
+    assert not done                                   # still waiting at 7 s
+    rec.feed(np.zeros(int(2 * SR), np.float32))
+    assert len(done) == 1 and all(f.midi is None for f in done[0])

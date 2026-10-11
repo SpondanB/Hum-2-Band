@@ -52,6 +52,7 @@ class Controller:
         self.reference_mix_enabled = False
         self._build_lock = threading.Lock()
         self._audio_ok = False
+        self._output_error = ""
         self.input_device = None          # None = system default
         self.output_device = None
         # --- melody editing
@@ -73,7 +74,8 @@ class Controller:
             self._audio_ok = True
         except Exception as e:
             self._audio_ok = False
-            self._set_state("error", message=f"Audio output unavailable: {e}")
+            self._output_error = f"Audio output unavailable: {e}"
+            self._set_state("error", message=self._output_error)
             return False
         if self.detected_key is not None:
             self._rebuild()                      # re-render at the device's sample rate
@@ -85,6 +87,9 @@ class Controller:
         except MicError as e:
             self._set_state("error", message=str(e))
             return False
+        if not self._audio_ok:                     # mic is fine but there is nowhere to play
+            self._set_state("error", message=self._output_error or "Audio output unavailable")
+            return True
         self._set_state("ready" if self.song else "idle")
         return True
 
@@ -385,7 +390,11 @@ class Controller:
 
     def playhead_beats(self):
         frac = self.engine.fraction()
-        return None if frac is None else frac * self.bars * 4
+        song = self.song
+        if frac is None or song is None:
+            return None
+        total = song.duration_beats if song.duration_beats is not None else song.bars * 4
+        return frac * total               # loop length follows the hum, not a fixed 4 bars
 
     # ------------------------------------------------------ demo / export
     def load_demo(self):
@@ -394,6 +403,7 @@ class Controller:
         with open(DEMO_PATH) as f:
             data = json.load(f)
         self.engine.stop()
+        self.reference_audio, self.reference_sr = None, None   # old hum doesn't belong to the demo
         self.process_notes([Note(**n) for n in data["notes"]])
 
     def save_wav(self, path):

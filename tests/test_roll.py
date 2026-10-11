@@ -40,3 +40,18 @@ def test_fit_ensure_and_pan():
     assert g.hi == 108
     g.pan(-1000)
     assert g.lo == 21
+
+
+def test_row_cap_keeps_rows_readable_and_panning_still_works():
+    g = geo()
+    assert g.rows_for_height(262, 13) == 20 and g.rows_for_height(10, 13) == 6   # floor
+    g.fit([Note(40, 0, 1), Note(84, 1, 1)])                  # 3+ octaves of melody
+    assert g.rows > 30
+    assert g.set_max_rows(18) and g.rows == 18               # squeezed window -> capped
+    assert g.row_h >= g.plot_h / 18 - 1e-9
+    lo = g.lo
+    g.pan(5)
+    assert g.lo == lo + 5 and g.rows == 18                   # reach the rest by panning
+    g.ensure_range([Note(30, 0, 1)])                         # edits still bring a note into view
+    assert g.lo <= 30 <= g.hi and g.rows <= 18
+    assert g.set_max_rows(None) is False                     # no cap -> unchanged

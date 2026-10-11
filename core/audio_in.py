@@ -80,6 +80,7 @@ class MicRecorder:
         self._t0 = 0.0
         self._duration = 0.0
         self._silence_timeout = 1.2
+        self._leading_timeout = 8.0
         self._last_activity_t = None
         self._frames = []
         self.last_capture_audio = np.zeros(0, dtype=np.float32)
@@ -140,8 +141,10 @@ class MicRecorder:
             self._stream = None
 
     # ---- capture control (thread-safe: goes through the same queue) ----
-    def begin_capture(self, duration_s, silence_timeout=1.2):
-        self._q.put(("begin", float(duration_s), float(silence_timeout)))
+    def begin_capture(self, duration_s, silence_timeout=1.2, leading_timeout=8.0):
+        """Capture up to duration_s. Ends early after `silence_timeout` s of quiet that
+        follows the hum, or after `leading_timeout` s if nothing is ever sung."""
+        self._q.put(("begin", float(duration_s), float(silence_timeout), float(leading_timeout)))
 
     def cancel_capture(self):
         self._q.put(("cancel", 0.0))
@@ -172,6 +175,7 @@ class MicRecorder:
                     self._capturing, self._frames = True, []
                     self._t0, self._duration = self._total / self.sr, float(item[1])
                     self._silence_timeout = float(item[2]) if len(item) > 2 else 1.2
+                    self._leading_timeout = float(item[3]) if len(item) > 3 else 8.0
                     self._last_activity_t = None
                     self._capture_audio = []
                     self._capture_samples = 0
@@ -220,6 +224,8 @@ class MicRecorder:
             if (self._last_activity_t is not None
                     and t_abs - self._last_activity_t >= self._silence_timeout):
                 self._finish_capture()
+            elif self._last_activity_t is None and t >= self._leading_timeout:
+                self._finish_capture()            # nobody hummed: don't wait for the 45 s cap
             elif t >= self._duration:
                 self._finish_capture()
 

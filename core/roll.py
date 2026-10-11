@@ -17,12 +17,13 @@ DEFAULT_LO, DEFAULT_HI = 48, 72     # C3 .. C5 shown on an empty chart
 
 class RollGeometry:
     def __init__(self, x=0.0, y=0.0, w=1000.0, h=400.0, gutter=64.0, header=18.0,
-                 total_beats=16, lo=DEFAULT_LO, hi=DEFAULT_HI, edge_px=8.0):
+                 total_beats=16, lo=DEFAULT_LO, hi=DEFAULT_HI, edge_px=8.0, max_rows=None):
         self.x, self.y, self.w, self.h = x, y, w, h
         self.gutter, self.header = gutter, header
         self.total_beats = total_beats
         self.lo, self.hi = lo, hi          # visible pitch range, inclusive
         self.edge_px = edge_px             # grab zone for resizing a note
+        self.max_rows = max_rows           # most pitch rows that stay readable at this height
 
     # ------------------------------------------------------------ rectangle
     def set_rect(self, x, y, w, h):
@@ -85,6 +86,25 @@ class RollGeometry:
         lo = max(PITCH_MIN, min(lo, PITCH_MAX - span))
         return lo, lo + span
 
+    @staticmethod
+    def rows_for_height(plot_h, min_row_px, floor=6):
+        """How many pitch rows fit in `plot_h` pixels at >= `min_row_px` each."""
+        return max(floor, int(plot_h // max(1.0, min_row_px)))
+
+    def _cap(self, center=None):
+        """Shrink the window to `max_rows` (centred on `center`); the rest is reached by panning."""
+        if not self.max_rows or self.rows <= self.max_rows:
+            return False
+        c = (self.lo + self.hi) // 2 if center is None else center
+        lo = c - self.max_rows // 2
+        self.lo, self.hi = self._clamp_span(lo, lo + self.max_rows - 1)
+        return True
+
+    def set_max_rows(self, max_rows):
+        """Set the row budget (e.g. after a resize). Returns True if the view changed."""
+        self.max_rows = int(max_rows) if max_rows else None
+        return self._cap()
+
     def fit(self, notes, min_span=16, margin=3):
         """Choose a visible range around the notes (used for a fresh melody)."""
         if not notes:
@@ -97,6 +117,8 @@ class RollGeometry:
             lo -= extra // 2
             hi += extra - extra // 2
         self.lo, self.hi = self._clamp_span(max(PITCH_MIN, lo), min(PITCH_MAX, hi))
+        lows = min(n.midi for n in notes)
+        self._cap((lows + max(n.midi for n in notes)) // 2)
 
     def ensure_range(self, notes, margin=1):
         """Grow (never shrink) the visible range so every note stays on screen."""
@@ -105,6 +127,7 @@ class RollGeometry:
         lo = min(self.lo, max(PITCH_MIN, min(n.midi for n in notes) - margin))
         hi = max(self.hi, min(PITCH_MAX, max(n.midi for n in notes) + margin))
         self.lo, self.hi = lo, hi
+        self._cap((min(n.midi for n in notes) + max(n.midi for n in notes)) // 2)
 
     def pan(self, semitones):
         self.lo, self.hi = self._clamp_span(self.lo + semitones, self.hi + semitones)

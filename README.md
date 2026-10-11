@@ -82,3 +82,16 @@ progressions, track gains.
 ## Not done / known limits
 Android (sounddevice doesn't run there), PyInstaller packaging, input device selection
 (uses the system default), 44.1 kHz assumed.
+
+## Responsive layout
+The window can be any size; nothing is cut off.
+- **Wide windows (roughly 860 dp and up, landscape):** the piano roll takes the left side and the
+  secondary settings (band, mix, hum reference, audio, tips) sit in a scrolling panel on the right.
+- **Narrow / tall windows:** the roll is on top (it never drops below a minimum height) and the
+  settings scroll underneath.
+- **Always visible:** Record / Play / Demo / Save and the live note + level meter.
+- **Scale:** one UI scale (0.85x to 1.6x) follows the window size, so a 4K monitor or tablet is as
+  comfortable as a laptop. Layout and scale rules are in `ui/responsive.py` (unit-tested).
+- **Piano roll:** keeps every pitch row readable for the available height; scroll the rest with the
+  mouse wheel or by dragging the piano keys (works on touch screens too).
+- Minimum window size is 400x480. The default window is 1000x680 so it fits a 1366x768 laptop.

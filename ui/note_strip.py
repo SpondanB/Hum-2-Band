@@ -30,6 +30,7 @@ _MOD_KEYS = {
 class NoteStrip(Widget):
     total_beats = NumericProperty(16)
     playhead = NumericProperty(-1)            # beats; < 0 hides the playhead
+    ui_scale = NumericProperty(1.0)           # follows the app-wide UI scale
     editable = BooleanProperty(False)
     edit_callback = ObjectProperty(None, allownone=True)      # f(list[Note]) after each edit
     preview_callback = ObjectProperty(None, allownone=True)   # f(midi) to audition a pitch
@@ -39,6 +40,7 @@ class NoteStrip(Widget):
         self.session = EditSession(RollGeometry(gutter=dp(66), header=dp(18), edge_px=dp(8)))
         self.session.on_preview = self._preview
         self.has_song = False
+        self._pan = None                      # (start_y, start_lo, row_h) while dragging the keys
         self._tex = {}
         self._mods = set()
         self._deferred = None
@@ -46,9 +48,34 @@ class NoteStrip(Widget):
         with self.canvas.after:
             Color(1, 1, 1, 0.9)
             self._ph = Line(points=[-10, 0, -10, 0], width=dp(2))
-        self.bind(pos=self._redraw, size=self._redraw, total_beats=self._redraw,
+        self.bind(pos=self._redraw, size=self._on_resize, total_beats=self._redraw,
                   playhead=self._move_playhead, editable=self._redraw)
         Window.bind(on_key_down=self._key_down, on_key_up=self._key_up)
+        self._apply_scale()
+
+    def dispose(self):
+        """Unhook the global keyboard handlers (call when the screen is torn down)."""
+        Window.unbind(on_key_down=self._key_down, on_key_up=self._key_up)
+
+    # ------------------------------------------------------------- scaling
+    def on_ui_scale(self, *_):
+        if hasattr(self, "session"):          # also fires while kv is still applying
+            self._apply_scale()
+
+    def _apply_scale(self):
+        g, sc = self.session.geo, self.ui_scale
+        g.gutter, g.header, g.edge_px = dp(66) * sc, dp(18) * sc, dp(8) * sc
+        self._on_resize()
+
+    def _on_resize(self, *_):
+        """Keep every pitch row readable: budget rows by height, reach the rest by panning."""
+        self._sync_geo()
+        g, s = self.session.geo, self.session
+        capacity = g.rows_for_height(g.plot_h, dp(13) * self.ui_scale)
+        g.set_max_rows(capacity)
+        if g.rows < capacity and s.notes:     # more room than before: show hidden notes again
+            g.ensure_range(s.notes)
+        self._redraw()
 
     # ------------------------------------------------------------ public API
     def set_song(self, song, fit=False):
@@ -149,6 +176,13 @@ class NoteStrip(Widget):
                 self.session.geo.pan(2)
             self._redraw()
             return True
+        g = self.session.geo
+        if touch.x < g.plot_x and touch.y <= g.plot_top:         # piano keys: drag pans pitch
+            touch.grab(self)
+            self._pan = (touch.y, g.lo, g.row_h)
+            if self.editable:
+                self.session.press(touch.x, touch.y)             # click = audition the key
+            return True
         if not self.editable:
             return True
         touch.grab(self)
@@ -161,6 +195,12 @@ class NoteStrip(Widget):
         if touch.grab_current is not self:
             return False
         self._sync_geo()
+        if self._pan is not None:
+            y0, lo0, row_h = self._pan
+            g = self.session.geo
+            g.pan(lo0 - int(round((touch.y - y0) / row_h)) - g.lo)   # content follows the pointer
+            self._redraw()
+            return True
         self.session.drag(touch.x, touch.y)
         self._redraw()
         return True
@@ -170,6 +210,9 @@ class NoteStrip(Widget):
             return False
         touch.ungrab(self)
         self._sync_geo()
+        if self._pan is not None:
+            self._pan = None
+            return True
         self.session.release(touch.x, touch.y)
         committed = self._after_edit()
         deferred, self._deferred = self._deferred, None
@@ -206,8 +249,9 @@ class NoteStrip(Widget):
         s, g = self.session, self.session.geo
         pcs = scale_pcs(s.root, s.mode)
         rh = g.row_h
-        font = int(dp(10))
-        label_all = rh >= dp(11)
+        sc = self.ui_scale
+        font = max(8, int(dp(10) * sc))
+        label_all = rh >= dp(11) * sc
         self.canvas.clear()
         with self.canvas:
             # ---- backgrounds
@@ -312,7 +356,7 @@ class NoteStrip(Widget):
             if not s.notes:
                 msg = ("Double-click to add a note" if self.has_song else
                        "Record a hum or load the demo melody - then edit it here")
-                self._text(msg, g.plot_x + g.plot_w / 2, g.y + g.plot_h / 2, int(dp(15)),
+                self._text(msg, g.plot_x + g.plot_w / 2, g.y + g.plot_h / 2, int(dp(15) * sc),
                            (0.7, 0.73, 0.8, 0.7), align="center")
         self._move_playhead()
 

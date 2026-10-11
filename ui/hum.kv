@@ -1,4 +1,5 @@
 #:import dp kivy.metrics.dp
+#:import sp kivy.metrics.sp
 #:set ACCENT (0.88, 0.36, 0.15, 1)
 #:set ACCENT_DOWN (0.69, 0.23, 0.13, 1)
 #:set RED (0.83, 0.23, 0.19, 1)
@@ -8,6 +9,9 @@
 #:set TEXT (0.94, 0.88, 0.82, 1)
 #:set MUTED (0.64, 0.55, 0.51, 1)
 
+# Every size below is  dp(n) * app.s  /  sp(n) * app.s  where app.s is the UI scale
+# computed from the window size (see ui/responsive.py), so the whole UI scales together.
+
 <AccentButton@Button>:
     background_normal: ''
     background_down: ''
@@ -15,35 +19,97 @@
     color: TEXT
     disabled_color: MUTED
     bold: True
-    font_size: '18sp'
+    font_size: sp(17) * app.s
     size_hint_y: None
-    height: dp(52)
+    height: dp(52) * app.s
+    shorten: True
+    shorten_from: 'right'
+    text_size: self.width - dp(8) * app.s, None
+    halign: 'center'
 
 <EditButton@Button>:
     background_normal: ''
     background_down: ''
     background_color: (0.14, 0.11, 0.11, 1) if self.disabled else (SURFACE if self.state == 'normal' else SURFACE_DOWN)
     color: MUTED if self.disabled else TEXT
-    size_hint: None, None
-    size: dp(88), dp(40)
-    font_size: '15sp'
+    disabled_color: MUTED
+    size_hint_y: None
+    height: dp(40) * app.s
+    font_size: sp(14) * app.s
+    shorten: True
+    shorten_from: 'right'
+    text_size: self.width - dp(8) * app.s, None
+    halign: 'center'
+
+<ScaledOption@SpinnerOption>:
+    background_normal: ''
+    background_down: ''
+    background_color: SURFACE if self.state == 'normal' else SURFACE_DOWN
+    color: TEXT
+    height: dp(42) * app.s
+    font_size: sp(15) * app.s
+    shorten: True
+    shorten_from: 'right'
+    text_size: self.width - dp(16) * app.s, None
+    halign: 'left'
 
 <DarkSpinner@Spinner>:
     background_normal: ''
     background_color: SURFACE
     color: TEXT
     size_hint_y: None
-    height: dp(48)
-    font_size: '18sp'
+    height: dp(44) * app.s
+    font_size: sp(15) * app.s
+    option_cls: 'ScaledOption'
+    shorten: True
+    shorten_from: 'right'
+    text_size: self.width - dp(16) * app.s, None
+    halign: 'center'
 
 <TrackToggle@ToggleButton>:
     background_normal: ''
     background_down: ''
     background_color: ACCENT_DOWN if self.state == 'down' else SURFACE
     color: TEXT if self.state == 'down' else (0.78, 0.71, 0.67, 1)
+    disabled_color: MUTED
     size_hint_y: None
-    height: dp(48)
-    font_size: '16sp'
+    height: dp(44) * app.s
+    font_size: sp(15) * app.s
+    shorten: True
+    shorten_from: 'right'
+    text_size: self.width - dp(8) * app.s, None
+    halign: 'center'
+
+<SectionLabel@Label>:
+    text_size: self.width, None
+    size_hint_y: None
+    height: self.texture_size[1] + dp(6) * app.s
+    font_size: sp(12) * app.s
+    bold: True
+    color: MUTED
+    halign: 'left'
+
+<ParamLabel@Label>:
+    text_size: self.size
+    font_size: sp(14) * app.s
+    color: MUTED
+    halign: 'left'
+    valign: 'middle'
+    size_hint_x: None
+    width: dp(84) * app.s
+
+<ValueLabel@Label>:
+    text_size: self.size
+    font_size: sp(14) * app.s
+    color: TEXT
+    halign: 'right'
+    valign: 'middle'
+    size_hint_x: None
+    width: dp(58) * app.s
+
+<ScaledSlider@Slider>:
+    cursor_size: dp(26) * app.s, dp(26) * app.s
+    padding: dp(14) * app.s
 
 <MainScreen>:
     canvas.before:
@@ -54,122 +120,47 @@
             size: self.size
     BoxLayout:
         orientation: 'vertical'
-        padding: dp(14)
-        spacing: dp(10)
+        padding: dp(12) * app.s
+        spacing: dp(8) * app.s
+
+        # ------------------------------------------------------------ header
         BoxLayout:
             size_hint_y: None
-            height: dp(48)
+            height: dp(44) * app.s
             Label:
                 text: 'Hum2Band'
-                font_size: '26sp'
+                font_size: sp(24) * app.s
                 bold: True
                 color: ACCENT
                 halign: 'left'
                 valign: 'middle'
                 text_size: self.size
             Label:
-                text: root.chords_text
-                font_size: '18sp'
+                text: '' if root.compact else root.chords_text
+                font_size: sp(17) * app.s
                 color: (0.78, 0.68, 0.62, 1)
             Label:
                 text: root.key_text
-                font_size: '21sp'
+                font_size: sp(19) * app.s
                 bold: True
                 color: TEXT
                 halign: 'right'
                 valign: 'middle'
                 text_size: self.size
-        BoxLayout:
+        Label:
+            # chord names get their own line on narrow windows
+            text: root.chords_text if root.compact else ''
             size_hint_y: None
-            height: dp(40)
-            spacing: dp(8)
-            EditButton:
-                text: 'Undo'
-                disabled: not root.can_undo
-                on_release: root.on_undo()
-            EditButton:
-                text: 'Redo'
-                disabled: not root.can_redo
-                on_release: root.on_redo()
-            EditButton:
-                text: 'Select all'
-                disabled: not root.can_edit
-                on_release: root.on_select_all()
-            EditButton:
-                text: 'Delete'
-                disabled: not root.can_edit
-                on_release: root.on_delete_notes()
-            DarkSpinner:
-                text: 'Grid: 1/8'
-                values: root.grid_choices
-                size_hint_x: None
-                width: dp(120)
-                height: dp(40)
-                font_size: '15sp'
-                on_text: root.on_grid(self.text)
-            TrackToggle:
-                text: 'Snap to key'
-                size_hint_x: None
-                width: dp(124)
-                height: dp(40)
-                font_size: '15sp'
-                state: 'down' if root.scale_lock else 'normal'
-                on_state: root.on_scale_lock(self.state == 'down')
-            Label:
-                text: root.edit_hint
-                font_size: '11sp'
-                shorten: True
-                shorten_from: 'right'
-                max_lines: 2
-                color: MUTED
-                halign: 'left'
-                valign: 'middle'
-                text_size: self.size
-        NoteStrip:
-            id: note_strip
-            editable: root.can_edit
-            edit_callback: root.on_edit_commit
-            preview_callback: root.on_preview_note
-        ProgressBar:
+            height: dp(22) * app.s if root.compact else 0
+            font_size: sp(15) * app.s
+            color: (0.78, 0.68, 0.62, 1)
+
+        # ------------------------------------------- transport (always pinned)
+        GridLayout:
+            cols: 4 if root.width >= dp(480) else 2
             size_hint_y: None
-            height: dp(8)
-            max: 1
-            value: root.progress
-        BoxLayout:
-            size_hint_y: None
-            height: dp(48)
-            spacing: dp(12)
-            Widget:
-                size_hint_x: None
-                width: dp(28)
-                canvas:
-                    Color:
-                        rgba: RED if root.is_recording else (0.35, 0.23, 0.20, 1)
-                    Ellipse:
-                        pos: self.x + dp(4), self.center_y - dp(10)
-                        size: dp(20), dp(20)
-            Label:
-                text: root.live_note
-                font_size: '30sp'
-                bold: True
-                size_hint_x: None
-                width: dp(90)
-            ProgressBar:
-                max: 1
-                value: root.level
-                size_hint_x: 0.5
-            Label:
-                text: root.status_text
-                font_size: '18sp'
-                color: RED if root.state == 'error' else TEXT
-                halign: 'left'
-                valign: 'middle'
-                text_size: self.size
-                size_hint_x: 1.5
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            spacing: dp(10)
+            height: self.minimum_height
+            spacing: dp(8) * app.s
             AccentButton:
                 text: root.record_text
                 disabled: not root.can_record
@@ -188,144 +179,253 @@
                 on_release: root.on_save()
         BoxLayout:
             size_hint_y: None
-            height: dp(48)
-            spacing: dp(10)
-            DarkSpinner:
-                text: 'Pop'
-                values: ['Pop', 'Lo-fi', 'Rock', 'Funk', 'Hip-hop', 'Electronic']
-                on_text: root.on_genre(self.text)
+            height: dp(44) * app.s
+            spacing: dp(10) * app.s
+            Widget:
+                size_hint_x: None
+                width: dp(26) * app.s
+                canvas:
+                    Color:
+                        rgba: RED if root.is_recording else (0.35, 0.23, 0.20, 1)
+                    Ellipse:
+                        pos: self.x + dp(4) * app.s, self.center_y - dp(9) * app.s
+                        size: dp(18) * app.s, dp(18) * app.s
             Label:
-                text: '%d BPM' % tempo.value
+                text: root.live_note
+                font_size: sp(26) * app.s
+                bold: True
                 size_hint_x: None
-                width: dp(90)
-                font_size: '18sp'
-            Slider:
-                id: tempo
-                min: 60
-                max: 160
-                step: 1
-                value: 100
-                on_value: root.on_tempo(self.value)
-            DarkSpinner:
-                text: 'Key: Auto'
-                values: root.key_choices
-                on_text: root.on_key_override(self.text)
-        BoxLayout:
-            size_hint_y: None
-            height: dp(48)
-            spacing: dp(10)
-            DarkSpinner:
-                text: root.bass_style_text
-                values: root.bass_style_choices
-                on_text: root.on_bass_style(self.text)
-            DarkSpinner:
-                text: root.drum_style_text
-                values: root.drum_style_choices
-                on_text: root.on_drum_style(self.text)
-        BoxLayout:
-            size_hint_y: None
-            height: dp(48)
-            spacing: dp(10)
-            DarkSpinner:
-                id: in_dev
-                text: root.default_in
-                values: root.input_names
-                on_text: root.on_input_device(self.text)
-            DarkSpinner:
-                id: out_dev
-                text: root.default_out
-                values: root.output_names
-                on_text: root.on_output_device(self.text)
-            Button:
-                text: 'Refresh audio'
-                size_hint_x: None
-                width: dp(140)
-                size_hint_y: None
-                height: dp(48)
-                background_normal: ''
-                background_color: SURFACE
-                color: TEXT
-                on_release: root.on_refresh()
-        BoxLayout:
-            size_hint_y: None
-            height: dp(48)
-            spacing: dp(10)
+                width: dp(76) * app.s
+            ProgressBar:
+                max: 1
+                value: root.level
+                size_hint_x: 0.5
             Label:
-                text: 'Mic gain'
-                size_hint_x: None
-                width: dp(90)
-                color: MUTED
-            Slider:
-                min: 0.25
-                max: 12
-                value: 2
-                size_hint_x: 1
-                on_value: root.on_gain(self.value)
-            Label:
-                text: 'Max hum'
-                size_hint_x: None
-                width: dp(80)
-                color: MUTED
-            Slider:
-                min: 5
-                max: 45
-                step: 1
-                value: 45
-                size_hint_x: 1
-                on_value: root.set_record_limit(self.value)
-            Label:
-                text: root.record_limit_text
-                size_hint_x: None
-                width: dp(40)
-                font_size: '15sp'
+                text: root.status_text
+                font_size: sp(15) * app.s
+                color: RED if root.state == 'error' else TEXT
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+                max_lines: 2
+                shorten: True
+                shorten_from: 'right'
+                size_hint_x: 1.6
+
+        # ---------- body: roll + settings. Side by side when wide, stacked when not
         BoxLayout:
-            size_hint_y: None
-            height: dp(48)
-            spacing: dp(10)
-            TrackToggle:
-                text: 'Melody'
-                state: 'down'
-                on_state: root.on_track('melody', self.state == 'down')
-            TrackToggle:
-                text: 'Chords'
-                state: 'down'
-                on_state: root.on_track('chords', self.state == 'down')
-            TrackToggle:
-                text: 'Bass'
-                state: 'down'
-                on_state: root.on_track('bass', self.state == 'down')
-            TrackToggle:
-                text: 'Drums'
-                state: 'down'
-                on_state: root.on_track('drums', self.state == 'down')
-        BoxLayout:
-            size_hint_y: None
-            height: dp(44)
-            spacing: dp(10)
-            AccentButton:
-                text: 'Play Hum Reference'
-                disabled: not root.can_reference
-                font_size: '16sp'
-                height: dp(44)
-                on_release: root.on_play_reference()
-            AccentButton:
-                text: 'Save Hum Reference'
-                disabled: not root.can_reference
-                font_size: '16sp'
-                height: dp(44)
-                on_release: root.on_save_reference()
-            TrackToggle:
-                text: 'Hum + Band'
-                state: 'down' if root.reference_with_band else 'normal'
-                disabled: not root.can_reference
-                font_size: '15sp'
-                height: dp(44)
-                on_state: root.on_reference_mix(self.state == 'down')
+            orientation: 'horizontal' if root.wide else 'vertical'
+            spacing: dp(10) * app.s
+
+            BoxLayout:
+                orientation: 'vertical'
+                spacing: dp(6) * app.s
+                size_hint_y: 1 if root.wide else 0.62
+                size_hint_min_y: 0 if root.wide else dp(220) * app.s
+                GridLayout:
+                    cols: 6 if self.width >= dp(560) * app.s else 3
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: dp(6) * app.s
+                    EditButton:
+                        text: 'Undo'
+                        disabled: not root.can_undo
+                        on_release: root.on_undo()
+                    EditButton:
+                        text: 'Redo'
+                        disabled: not root.can_redo
+                        on_release: root.on_redo()
+                    EditButton:
+                        text: 'Select all'
+                        disabled: not root.can_edit
+                        on_release: root.on_select_all()
+                    EditButton:
+                        text: 'Delete'
+                        disabled: not root.can_edit
+                        on_release: root.on_delete_notes()
+                    DarkSpinner:
+                        text: 'Grid: 1/8'
+                        values: root.grid_choices
+                        height: dp(40) * app.s
+                        font_size: sp(14) * app.s
+                        on_text: root.on_grid(self.text)
+                    TrackToggle:
+                        text: 'Snap to key'
+                        height: dp(40) * app.s
+                        font_size: sp(14) * app.s
+                        state: 'down' if root.scale_lock else 'normal'
+                        on_state: root.on_scale_lock(self.state == 'down')
+                NoteStrip:
+                    id: note_strip
+                    ui_scale: app.s
+                    editable: root.can_edit
+                    edit_callback: root.on_edit_commit
+                    preview_callback: root.on_preview_note
+                ProgressBar:
+                    size_hint_y: None
+                    height: dp(8) * app.s
+                    max: 1
+                    value: root.progress
+
+            # ------------------------- secondary settings: the only scrolling part
+            ScrollView:
+                id: panel
+                do_scroll_x: False
+                bar_width: dp(6) * app.s
+                bar_color: ACCENT
+                bar_inactive_color: 0.88, 0.36, 0.15, 0.35
+                scroll_type: ['bars', 'content']
+                size_hint_x: None if root.wide else 1
+                width: max(dp(300) * app.s, min(root.width * 0.36, dp(460) * app.s))
+                size_hint_y: 1 if root.wide else 0.38
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: 0, 0, dp(10) * app.s, dp(12) * app.s
+                    spacing: dp(8) * app.s
+
+                    SectionLabel:
+                        text: 'BAND'
+                    GridLayout:
+                        cols: 1 if self.width < dp(330) * app.s else 2
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(8) * app.s
+                        DarkSpinner:
+                            text: 'Pop'
+                            values: ['Pop', 'Lo-fi', 'Rock', 'Funk', 'Hip-hop', 'Electronic']
+                            on_text: root.on_genre(self.text)
+                        DarkSpinner:
+                            text: 'Key: Auto'
+                            values: root.key_choices
+                            on_text: root.on_key_override(self.text)
+                        DarkSpinner:
+                            text: root.bass_style_text
+                            values: root.bass_style_choices
+                            on_text: root.on_bass_style(self.text)
+                        DarkSpinner:
+                            text: root.drum_style_text
+                            values: root.drum_style_choices
+                            on_text: root.on_drum_style(self.text)
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(44) * app.s
+                        ParamLabel:
+                            text: 'Tempo'
+                        ScaledSlider:
+                            id: tempo
+                            min: 60
+                            max: 160
+                            step: 1
+                            value: 100
+                            on_value: root.on_tempo(self.value)
+                        ValueLabel:
+                            text: '%d BPM' % tempo.value
+                            width: dp(76) * app.s
+
+                    SectionLabel:
+                        text: 'MIX'
+                    GridLayout:
+                        cols: 4 if self.width >= dp(330) * app.s else 2
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(6) * app.s
+                        TrackToggle:
+                            text: 'Melody'
+                            state: 'down'
+                            on_state: root.on_track('melody', self.state == 'down')
+                        TrackToggle:
+                            text: 'Chords'
+                            state: 'down'
+                            on_state: root.on_track('chords', self.state == 'down')
+                        TrackToggle:
+                            text: 'Bass'
+                            state: 'down'
+                            on_state: root.on_track('bass', self.state == 'down')
+                        TrackToggle:
+                            text: 'Drums'
+                            state: 'down'
+                            on_state: root.on_track('drums', self.state == 'down')
+
+                    SectionLabel:
+                        text: 'YOUR HUM'
+                    GridLayout:
+                        cols: 3 if self.width >= dp(330) * app.s else 1
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(6) * app.s
+                        EditButton:
+                            text: 'Play hum'
+                            disabled: not root.can_reference
+                            on_release: root.on_play_reference()
+                        EditButton:
+                            text: 'Save hum'
+                            disabled: not root.can_reference
+                            on_release: root.on_save_reference()
+                        TrackToggle:
+                            text: 'Hum + band'
+                            height: dp(40) * app.s
+                            font_size: sp(14) * app.s
+                            state: 'down' if root.reference_with_band else 'normal'
+                            disabled: not root.can_reference
+                            on_state: root.on_reference_mix(self.state == 'down')
+
+                    SectionLabel:
+                        text: 'AUDIO'
+                    DarkSpinner:
+                        id: in_dev
+                        text: root.default_in
+                        values: root.input_names
+                        on_text: root.on_input_device(self.text)
+                    DarkSpinner:
+                        id: out_dev
+                        text: root.default_out
+                        values: root.output_names
+                        on_text: root.on_output_device(self.text)
+                    EditButton:
+                        text: 'Refresh audio devices'
+                        on_release: root.on_refresh()
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(44) * app.s
+                        ParamLabel:
+                            text: 'Mic gain'
+                        ScaledSlider:
+                            min: 0.25
+                            max: 12
+                            value: 2
+                            on_value: root.on_gain(self.value)
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(44) * app.s
+                        ParamLabel:
+                            text: 'Max hum'
+                        ScaledSlider:
+                            min: 5
+                            max: 45
+                            step: 1
+                            value: 45
+                            on_value: root.set_record_limit(self.value)
+                        ValueLabel:
+                            text: root.record_limit_text
+
+                    SectionLabel:
+                        text: 'EDITING TIPS'
+                    Label:
+                        text: root.edit_hint
+                        size_hint_y: None
+                        text_size: self.width, None
+                        height: self.texture_size[1] + dp(8) * app.s
+                        font_size: sp(12) * app.s
+                        color: MUTED
+                        halign: 'left'
+
     Label:
         text: root.big_text
-        font_size: '180sp'
+        font_size: min(root.height * 0.38, sp(190) * app.s)
         bold: True
         color: 1, 1, 1, 0.92
         size_hint: None, None
-        size: dp(300), dp(300)
-        pos_hint: {'center_x': .5, 'center_y': .58}
+        size: self.font_size * 1.6, self.font_size * 1.6
+        pos_hint: {'center_x': .5, 'center_y': .55}

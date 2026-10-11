@@ -3,8 +3,10 @@ import os
 import threading
 import time
 
+from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Keyboard, Window
+from kivy.metrics import dp
 from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
                              StringProperty)
 from kivy.uix.boxlayout import BoxLayout
@@ -19,10 +21,12 @@ from core.controller import Controller
 from core.patterns import (BASS_STYLE_OPTIONS, DRUM_STYLE_OPTIONS, GENRE_LABELS,
                            NOTE_NAMES)
 from ui.note_strip import NoteStrip  # noqa: F401  (needed by hum.kv)
+from ui.responsive import compute_layout
 
 GRID_CHOICES = {"Grid: 1/4": 1.0, "Grid: 1/8": 0.5, "Grid: 1/16": 0.25}
-EDIT_HINT = ("Drag: move | right edge: resize | Shift-click or box: multi-select | "
-             "Double-click: add/delete | Del, arrows, Ctrl+Z")
+EDIT_HINT = ("Double-click: add or delete a note. Drag a note to move it, its right edge to "
+             "resize. Shift-click or drag a box to multi-select. Del, arrow keys, Ctrl+Z / "
+             "Ctrl+Y also work. Drag the piano keys (or use the mouse wheel) to scroll pitch.")
 _KEY_NAMES = {code: name for name, code in Keyboard.keycodes.items()}
 
 KEY_CHOICES = ["Key: Auto"] + [f"{n} {m}" for m in ("major", "minor") for n in NOTE_NAMES]
@@ -71,6 +75,9 @@ class MainScreen(FloatLayout):
     scale_lock = BooleanProperty(True)
     grid_choices = ListProperty(list(GRID_CHOICES))
     edit_hint = StringProperty(EDIT_HINT)
+    # --- responsive layout (see ui/responsive.py)
+    wide = BooleanProperty(True)       # roll + side panel (True) or stacked (False)
+    compact = BooleanProperty(False)   # narrow window
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -84,8 +91,30 @@ class MainScreen(FloatLayout):
         self._local_rev = 0          # newest melody revision the user created on screen
         self._seen_gen = 0           # last recognised/loaded melody shown (to re-centre the roll)
         Window.bind(on_key_down=self._on_key_down)
+        self.bind(size=lambda *_: self._relayout())
+        Clock.schedule_once(lambda dt: self._relayout(), 0)
         Clock.schedule_once(self._startup, 0.3)
-        Clock.schedule_interval(self._tick_playhead, 1 / 60.0)
+        self._ev_playhead = Clock.schedule_interval(self._tick_playhead, 1 / 60.0)
+
+    # ------------------------------------------------------------ responsive layout
+    def _relayout(self):
+        """Pick scale + wide/stacked layout from the window size (dp units)."""
+        unit = dp(1)
+        lay = compute_layout(self.width / unit, self.height / unit)
+        app = App.get_running_app()
+        if app is not None and app.s != lay.scale:
+            app.s = lay.scale
+        self.wide, self.compact = lay.wide, lay.compact
+
+    def shutdown(self):
+        """Release global hooks and audio (called from App.on_stop)."""
+        Window.unbind(on_key_down=self._on_key_down)
+        self._cancel(("_ev_count", "_ev_prog", "_ev_tempo", "_ev_playhead"))
+        strip = self.ids.get("note_strip")
+        if strip is not None:
+            strip.dispose()
+        if self.controller:
+            self.controller.shutdown()
 
     # --------------------------------------------------------------- audio devices
     def _startup(self, dt):
@@ -282,7 +311,7 @@ class MainScreen(FloatLayout):
 
     def _on_key_down(self, window, key, scancode=None, codepoint=None, modifiers=None, *args):
         strip = self.ids.get("note_strip")
-        if strip is None or not self.can_edit:
+        if strip is None or not self.can_edit or self._saving:   # _saving = a dialog is open
             return False
         mods = set(modifiers or [])
         ctrl, shift = bool(mods & {"ctrl", "meta"}), "shift" in mods
@@ -360,20 +389,25 @@ class MainScreen(FloatLayout):
         if getattr(self, "_saving", False):
             return
         self._saving = True
+        app = App.get_running_app()
+        sc = app.s if app is not None else 1.0
+        row = dp(44) * sc
         chooser = FileChooserListView(path=os.path.expanduser("~"), filters=["*.wav"])
-        filename = TextInput(text=initialfile, multiline=False, size_hint_y=None, height=44)
-        content = BoxLayout(orientation="vertical", spacing=8, padding=10)
+        filename = TextInput(text=initialfile, multiline=False, size_hint_y=None, height=row,
+                             font_size=dp(15) * sc)
+        content = BoxLayout(orientation="vertical", spacing=dp(8) * sc, padding=dp(10) * sc)
         content.add_widget(chooser)
-        content.add_widget(Label(text="File name", size_hint_y=None, height=24,
+        content.add_widget(Label(text="File name", size_hint_y=None, height=dp(24) * sc,
                                  halign="left", valign="middle"))
         content.add_widget(filename)
-        actions = BoxLayout(size_hint_y=None, height=44, spacing=8)
+        actions = BoxLayout(size_hint_y=None, height=row, spacing=dp(8) * sc)
         save_button = Button(text="Save")
         cancel_button = Button(text="Cancel")
         actions.add_widget(save_button)
         actions.add_widget(cancel_button)
         content.add_widget(actions)
-        popup = Popup(title=title, content=content, size_hint=(0.82, 0.82), auto_dismiss=False)
+        popup = Popup(title=title, content=content, auto_dismiss=False,
+                      size_hint=(0.95, 0.92) if self.compact else (0.82, 0.82))
 
         def close(*_):
             self._saving = False

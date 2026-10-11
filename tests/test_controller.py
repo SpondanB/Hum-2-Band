@@ -3,7 +3,10 @@ import tempfile
 import time
 import wave
 
+import numpy as np
+
 from core.controller import Controller
+from core.models import Note
 
 states = []
 
@@ -230,3 +233,29 @@ def test_auto_key_redetects_from_edited_melody():
     c.set_key_override((7, "major")); time.sleep(0.2)
     c.set_key_override(None); time.sleep(0.3)
     assert c.key_override is None and c.detected_key == (9, "minor")   # A..A phrase, not the old C major
+
+
+def test_playhead_follows_the_real_loop_length_not_four_bars():
+    c = make()
+    c.process_notes([Note(60 + i % 5, i, 1) for i in range(30)], autoplay=False,
+                    duration_beats=30.0)
+    c.engine.play()
+    c.engine._pos = len(c.engine._loop) // 2
+    assert abs(c.playhead_beats() - 15.0) < 0.01
+    c.engine.stop()
+    assert c.playhead_beats() is None
+
+
+def test_demo_discards_the_previous_hum_reference():
+    c = make()
+    c.reference_audio, c.reference_sr = np.ones(1000, dtype=np.float32), 44100
+    c.load_demo()
+    assert c.reference_audio is None
+
+
+def test_output_failure_stays_visible_when_mic_opens_fine():
+    c = make()
+    c.engine.start = lambda *a: (_ for _ in ()).throw(RuntimeError("no speakers"))
+    c.recorder.start = lambda *a: None
+    c.start()
+    assert c.state == "error" and "no speakers" in states[-1][1]["message"]
