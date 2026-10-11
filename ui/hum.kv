@@ -1,0 +1,175 @@
+#:import dp kivy.metrics.dp
+#:set ACCENT (0.18, 0.85, 0.72, 1)
+#:set RED (0.95, 0.27, 0.30, 1)
+#:set DARK (0.04, 0.05, 0.07, 1)
+
+<AccentButton@Button>:
+    background_normal: ''
+    background_down: ''
+    background_color: (0.25, 0.27, 0.32, 1) if self.disabled else (ACCENT if self.state == 'normal' else (0.12, 0.6, 0.5, 1))
+    color: DARK
+    disabled_color: (0.55, 0.57, 0.62, 1)
+    bold: True
+    font_size: '20sp'
+    size_hint_y: None
+    height: dp(56)
+
+<DarkSpinner@Spinner>:
+    background_normal: ''
+    background_color: (0.2, 0.22, 0.28, 1)
+    size_hint_y: None
+    height: dp(48)
+    font_size: '18sp'
+
+<TrackToggle@ToggleButton>:
+    background_normal: ''
+    background_down: ''
+    background_color: ACCENT if self.state == 'down' else (0.25, 0.27, 0.32, 1)
+    color: DARK if self.state == 'down' else (0.8, 0.8, 0.85, 1)
+    size_hint_y: None
+    height: dp(48)
+    font_size: '16sp'
+
+<MainScreen>:
+    canvas.before:
+        Color:
+            rgba: 0.07, 0.08, 0.11, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(14)
+        spacing: dp(10)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            Label:
+                text: 'Hum-to-Band'
+                font_size: '26sp'
+                bold: True
+                color: ACCENT
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+            Label:
+                text: root.chords_text
+                font_size: '18sp'
+                color: 0.75, 0.77, 0.82, 1
+            Label:
+                text: root.key_text
+                font_size: '24sp'
+                bold: True
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+        NoteStrip:
+            id: note_strip
+        ProgressBar:
+            size_hint_y: None
+            height: dp(8)
+            max: 1
+            value: root.progress
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(12)
+            Widget:
+                size_hint_x: None
+                width: dp(28)
+                canvas:
+                    Color:
+                        rgba: RED if root.is_recording else (0.3, 0.3, 0.35, 1)
+                    Ellipse:
+                        pos: self.x + dp(4), self.center_y - dp(10)
+                        size: dp(20), dp(20)
+            Label:
+                text: root.live_note
+                font_size: '30sp'
+                bold: True
+                size_hint_x: None
+                width: dp(90)
+            ProgressBar:
+                max: 1
+                value: root.level
+                size_hint_x: 0.5
+            Label:
+                text: root.status_text
+                font_size: '18sp'
+                color: RED if root.state == 'error' else (0.85, 0.87, 0.9, 1)
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 1.5
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            spacing: dp(10)
+            AccentButton:
+                text: root.record_text
+                disabled: not root.can_record
+                on_release: root.on_record()
+            AccentButton:
+                text: root.play_text
+                disabled: not root.can_play
+                on_release: root.on_play_stop()
+            AccentButton:
+                text: 'Demo melody'
+                disabled: not root.can_record
+                on_release: root.on_demo()
+            AccentButton:
+                text: 'Save WAV'
+                disabled: not root.can_play
+                on_release: root.on_save()
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(10)
+            DarkSpinner:
+                text: 'Pop'
+                values: ['Pop', 'Lo-fi']
+                on_text: root.on_genre(self.text)
+            Label:
+                text: '%d BPM' % tempo.value
+                size_hint_x: None
+                width: dp(90)
+                font_size: '18sp'
+            Slider:
+                id: tempo
+                min: 60
+                max: 160
+                step: 1
+                value: 100
+                on_value: root.on_tempo(self.value)
+            DarkSpinner:
+                text: 'Key: Auto'
+                values: root.key_choices
+                on_text: root.on_key_override(self.text)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(10)
+            TrackToggle:
+                text: 'Melody'
+                state: 'down'
+                on_state: root.on_track('melody', self.state == 'down')
+            TrackToggle:
+                text: 'Chords'
+                state: 'down'
+                on_state: root.on_track('chords', self.state == 'down')
+            TrackToggle:
+                text: 'Bass'
+                state: 'down'
+                on_state: root.on_track('bass', self.state == 'down')
+            TrackToggle:
+                text: 'Drums'
+                state: 'down'
+                on_state: root.on_track('drums', self.state == 'down')
+    Label:
+        text: root.big_text
+        font_size: '180sp'
+        bold: True
+        color: 1, 1, 1, 0.92
+        size_hint: None, None
+        size: dp(300), dp(300)
+        pos_hint: {'center_x': .5, 'center_y': .58}

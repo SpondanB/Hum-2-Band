@@ -1,0 +1,7 @@
+kivy>=2.2
+numpy
+sounddevice
+pytest
+# Optional: better/faster pitch detection. If it fails to install (common on
+# Python 3.12+), the app automatically falls back to the built-in NumPy YIN.
+# aubio
