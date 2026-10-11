@@ -51,6 +51,7 @@ class MainScreen(FloatLayout):
                                      on_live=_ui(self._on_live),
                                      on_result=_ui(self._on_result))
         self._in_map, self._out_map = {}, {}
+        self._saving = False
         Clock.schedule_once(self._startup, 0.3)
         Clock.schedule_interval(self._tick_playhead, 1 / 60.0)
 
@@ -206,7 +207,45 @@ class MainScreen(FloatLayout):
         if self.controller:
             self.controller.set_track_enabled(name, enabled)
 
+    def _ask_save_path(self):
+        try:
+            try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except Exception:
+                pass
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            path = filedialog.asksaveasfilename(
+                parent=root,
+                initialdir=os.path.expanduser("~"),
+                initialfile="hum_to_band.wav",
+                defaultextension=".wav",
+                filetypes=[("WAV Audio (*.wav)", "*.wav"), ("All Files (*.*)", "*.*")],
+                title="Save Audio As",
+            )
+            root.destroy()
+            return path if path else None
+        except Exception:
+            return None
+
     def on_save(self):
-        path = os.path.join(os.path.expanduser("~"), "hum_to_band.wav")
-        if self.controller.save_wav(path):
-            self.status_text = f"Saved {path}"
+        if getattr(self, "_saving", False) or not self.controller:
+            return
+        self._saving = True
+
+        def work():
+            try:
+                path = self._ask_save_path()
+                if path and self.controller.save_wav(path):
+                    Clock.schedule_once(lambda dt: setattr(self, "status_text", f"Saved {path}"), 0)
+            finally:
+                self._saving = False
+
+        threading.Thread(target=work, daemon=True).start()
